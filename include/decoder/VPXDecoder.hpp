@@ -2,6 +2,7 @@
 	MIT License
 
 	Copyright (c) 2016 Błażej Szczygieł
+	Copyright (c) 2026-present DaveTheEggman & contributors
 
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +26,7 @@
 #ifndef VPXDECODER_HPP
 #define VPXDECODER_HPP
 
-#include "WebMDemuxer.hpp"
+#include "include/demuxer/WebMDemuxer.hpp"
 
 struct vpx_codec_ctx;
 

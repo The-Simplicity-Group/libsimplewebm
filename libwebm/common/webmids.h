@@ -71,6 +71,11 @@ enum MkvId {
   kMkvFlagLacing = 0x9C,
   kMkvDefaultDuration = 0x23E383,
   kMkvMaxBlockAdditionID = 0x55EE,
+  kMkvBlockAdditionMapping = 0x41E4,
+  kMkvBlockAddIdValue = 0x41F0,
+  kMkvBlockAddIdName = 0x41A4,
+  kMkvBlockAddIdType = 0x41E7,
+  kMkvBlockAddIdExtraData = 0x41ED,
   kMkvName = 0x536E,
   kMkvLanguage = 0x22B59C,
   kMkvCodecID = 0x86,
@@ -93,6 +98,7 @@ enum MkvId {
   kMkvDisplayHeight = 0x54BA,
   kMkvDisplayUnit = 0x54B2,
   kMkvAspectRatioType = 0x54B3,
+  kMkvColourSpace = 0x2EB524,
   kMkvFrameRate = 0x2383E3,
   // end video
   // colour
@@ -124,6 +130,14 @@ enum MkvId {
   kMkvLuminanceMin = 0x55DA,
   // end mastering metadata
   // end colour
+  // projection
+  kMkvProjection = 0x7670,
+  kMkvProjectionType = 0x7671,
+  kMkvProjectionPrivate = 0x7672,
+  kMkvProjectionPoseYaw = 0x7673,
+  kMkvProjectionPosePitch = 0x7674,
+  kMkvProjectionPoseRoll = 0x7675,
+  // end projection
   // audio
   kMkvAudio = 0xE1,
   kMkvSamplingFrequency = 0xB5,

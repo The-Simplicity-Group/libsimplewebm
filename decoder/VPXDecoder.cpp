@@ -2,6 +2,7 @@
 	MIT License
 
 	Copyright (c) 2016 Błażej Szczygieł
+	Copyright (c) 2026-present DaveTheEggman & contributors
 
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +23,7 @@
 	SOFTWARE.
 */
 
-#include "VPXDecoder.hpp"
+#include "include/decoder/VPXDecoder.hpp"
 
 #include <vpx/vpx_decoder.h>
 #include <vpx/vp8dx.h>
