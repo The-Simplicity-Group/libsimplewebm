@@ -127,21 +127,31 @@ WebMDemuxer::AUDIO_CODEC WebMDemuxer::getAudioCodec() const
 {
 	return m_aCodec;
 }
+
 const unsigned char *WebMDemuxer::getAudioExtradata(size_t &size) const
 {
+	if (!m_audioTrack)
+	{
+		size = 0;
+		return nullptr;
+	}
+
 	return m_audioTrack->GetCodecPrivate(size);
 }
+
 double WebMDemuxer::getSampleRate() const
 {
-	return m_audioTrack->GetSamplingRate();
+	return m_audioTrack ? m_audioTrack->GetSamplingRate() : 0.0;
 }
+
 int WebMDemuxer::getChannels() const
 {
-	return m_audioTrack->GetChannels();
+	return m_audioTrack ? m_audioTrack->GetChannels() : 0;
 }
+
 int WebMDemuxer::getAudioDepth() const
 {
-	return m_audioTrack->GetBitDepth();
+	return m_audioTrack ? m_audioTrack->GetBitDepth() : 0;
 }
 
 bool WebMDemuxer::readFrame(WebMFrame *videoFrame, WebMFrame *audioFrame)
