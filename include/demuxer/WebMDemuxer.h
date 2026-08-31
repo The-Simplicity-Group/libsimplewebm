@@ -23,25 +23,23 @@
 	SOFTWARE.
 */
 
-#ifndef WEBMDEMUXER_HPP
-#define WEBMDEMUXER_HPP
+#ifndef WEBM_DEMUXER_H
+#define WEBM_DEMUXER_H
 
 #include <stddef.h>
+#include <stdint.h>
 
-namespace mkvparser {
-	class IMkvReader;
-	class Segment;
-	class Cluster;
-	class Block;
-	class BlockEntry;
-	class VideoTrack;
-	class AudioTrack;
-}
+#include <vector>
+
+#include <webm/callback.h>
+#include <webm/reader.h>
+#include <webm/webm_parser.h>
 
 class WebMFrame
 {
 	WebMFrame(const WebMFrame &);
 	void operator =(const WebMFrame &);
+
 public:
 	WebMFrame();
 	~WebMFrame();
@@ -51,8 +49,17 @@ public:
 		return bufferSize > 0;
 	}
 
+	inline bool hasAlpha() const
+	{
+		return alphaBufferSize > 0;
+	}
+
 	long bufferSize, bufferCapacity;
 	unsigned char *buffer;
+
+	long alphaBufferSize, alphaBufferCapacity;
+	unsigned char *alphaBuffer;
+
 	double time;
 	bool key;
 };
@@ -61,6 +68,20 @@ class WebMDemuxer
 {
 	WebMDemuxer(const WebMDemuxer &);
 	void operator =(const WebMDemuxer &);
+
+	struct ParsedFrame
+	{
+		std::vector<unsigned char> buffer;
+		std::vector<unsigned char> alphaBuffer;
+		double time;
+		bool key;
+		bool video;
+
+		ParsedFrame() : time(0), key(false), video(false) {}
+	};
+
+	class ParserCallback;
+
 public:
 	enum VIDEO_CODEC
 	{
@@ -68,6 +89,7 @@ public:
 		VIDEO_VP8,
 		VIDEO_VP9
 	};
+
 	enum AUDIO_CODEC
 	{
 		NO_AUDIO,
@@ -75,13 +97,16 @@ public:
 		AUDIO_OPUS
 	};
 
-	WebMDemuxer(mkvparser::IMkvReader *reader, int videoTrack = 0, int audioTrack = 0);
+	// videoTrack and audioTrack are zero-based indexes into the video/audio
+	// tracks in the WebM file, not Matroska track numbers.
+	WebMDemuxer(webm::Reader *reader, int videoTrack = 0, int audioTrack = 0);
 	~WebMDemuxer();
 
 	inline bool isOpen() const
 	{
 		return m_isOpen;
 	}
+
 	inline bool isEOS() const
 	{
 		return m_eos;
@@ -94,7 +119,7 @@ public:
 	int getHeight() const;
 
 	AUDIO_CODEC getAudioCodec() const;
-	const unsigned char *getAudioExtradata(size_t &size) const; // Needed for Vorbis
+	const unsigned char *getAudioExtradata(size_t &size) const;
 	double getSampleRate() const;
 	int getChannels() const;
 	int getAudioDepth() const;
@@ -102,25 +127,35 @@ public:
 	bool readFrame(WebMFrame *videoFrame, WebMFrame *audioFrame);
 
 private:
-	inline bool notSupportedTrackNumber(long videoTrackNumber, long audioTrackNumber) const;
+	webm::Reader *m_reader;
+	webm::WebmParser m_parser;
 
-	mkvparser::IMkvReader *m_reader;
-	mkvparser::Segment *m_segment;
+	ParserCallback *m_callback;
 
-	const mkvparser::Cluster *m_cluster;
-	const mkvparser::Block *m_block;
-	const mkvparser::BlockEntry *m_blockEntry;
+	std::vector<ParsedFrame> m_frames;
+	size_t m_frameIndex;
 
-	int m_blockFrameIndex;
+	double m_length;
 
-	const mkvparser::VideoTrack *m_videoTrack;
+	// These are zero-based indexes supplied by the caller.
+	int m_videoTrack;
+	int m_audioTrack;
+
 	VIDEO_CODEC m_vCodec;
-
-	const mkvparser::AudioTrack *m_audioTrack;
 	AUDIO_CODEC m_aCodec;
+
+	int m_width;
+	int m_height;
+
+	double m_sampleRate;
+	int m_channels;
+	int m_audioDepth;
+
+	std::vector<unsigned char> m_audioExtradata;
 
 	bool m_isOpen;
 	bool m_eos;
+	bool m_parseError;
 };
 
-#endif // WEBMDEMUXER_HPP
+#endif // WEBMDEMUXER_H

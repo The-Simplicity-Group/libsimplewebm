@@ -23,17 +23,19 @@
 	SOFTWARE.
 */
 
-#ifndef VPXDECODER_HPP
-#define VPXDECODER_HPP
+#ifndef VPX_DECODER_H
+#define VPX_DECODER_H
 
-#include "include/demuxer/WebMDemuxer.hpp"
+#include "include/demuxer/WebMDemuxer.h"
 
 struct vpx_codec_ctx;
+struct vpx_codec_iface;
 
 class VPXDecoder
 {
 	VPXDecoder(const VPXDecoder &);
 	void operator =(const VPXDecoder &);
+
 public:
 	class Image
 	{
@@ -43,9 +45,14 @@ public:
 
 		int w, h;
 		int cs;
+
 		int chromaShiftW, chromaShiftH;
+
 		unsigned char *planes[3];
 		int linesize[3];
+
+		unsigned char *alpha;
+		int alphaLinesize;
 	};
 
 	enum IMAGE_ERROR
@@ -63,19 +70,33 @@ public:
 		return (bool)m_ctx;
 	}
 
+	inline bool hasAlpha() const
+	{
+		return (bool)m_alphaCtx;
+	}
+
 	inline int getFramesDelay() const
 	{
 		return m_delay;
 	}
 
 	bool decode(const WebMFrame &frame);
-	IMAGE_ERROR getImage(Image &image); //The data is NOT copied! Only 3-plane, 8-bit images are supported.
+
+	// The image data is not copied. Only 8-bit planar images are supported.
+	IMAGE_ERROR getImage(Image &image);
 
 private:
 	vpx_codec_ctx *m_ctx;
+	vpx_codec_ctx *m_alphaCtx;
+	const vpx_codec_iface *m_codecIface;
+
 	const void *m_iter;
+	const void *m_alphaIter;
+
+	unsigned m_threads;
+
 	int m_delay;
 	int m_last_space;
 };
 
-#endif // VPXDECODER_HPP
+#endif // VPXDECODER_H
