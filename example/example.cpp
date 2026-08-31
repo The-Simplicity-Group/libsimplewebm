@@ -2,7 +2,8 @@
  *    MIT License
  *
  *    Copyright (c) 2016 Błażej Szczygieł
- * 	  Copyright (c) 2026-present DaveTheEggman & contributors
+ * 	  Copyright (c) 2026-present The Simplicity Group & contributors
+ * 	  See AUTHORS.md for more information
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a copy
  *    of this software and associated documentation files (the "Software"), to deal
@@ -149,8 +150,6 @@ int main(int argc, char *argv[])
 			{
 				++decodedImages;
 
-				std::fprintf(stderr, "VPX image: %ux%u, alpha=%s, alpha_plane=%p\n", image.w, image.h, image.alpha ? "yes" : "no", static_cast<void *>(image.alpha));
-
 				hasAlpha |= image.alpha != nullptr;
 			}
 		}
@@ -179,11 +178,6 @@ int main(int argc, char *argv[])
 			++audioFrames;
 		}
 	}
-
-	std::fprintf(stderr, "Alpha: %s\n", hasAlpha ? "yes" : "no");
-	std::fprintf(stderr, "Decoded video frames: %u\n", videoFrames);
-	std::fprintf(stderr, "Decoded video images: %u\n", decodedImages);
-	std::fprintf(stderr, "Decoded audio frames: %u\n", audioFrames);
 
 	return success ? 0 : 1;
 }

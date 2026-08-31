@@ -2,7 +2,8 @@
  *    MIT License
  *
  *    Copyright (c) 2016 Błażej Szczygieł
- * 	  Copyright (c) 2026-present DaveTheEggman & contributors
+ * 	  Copyright (c) 2026-present The Simplicity Group & contributors
+ * 	  See AUTHORS.md for more information
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a copy
  *    of this software and associated documentation files (the "Software"), to deal
@@ -187,9 +188,9 @@ int main(int argc, char *argv[])
 			frameTime = videoFrame.time;
 			haveFrame = true;
 
-			std::fprintf(stderr, "Frame: %.3f s, %dx%d, alpha=%s\n", frameTime, image.w, image.h, image.alpha ? "yes" : "no");
+			//std::fprintf(stderr, "Frame: %.3f s, %dx%d, alpha=%s\n", frameTime, image.w, image.h, image.alpha ? "yes" : "no");
 
-            std::fprintf(stderr, "Y=%p U=%p V=%p A=%p | strides=%d/%d/%d/%d\n", static_cast<void *>(image.planes[0]), static_cast<void *>(image.planes[1]), static_cast<void *>(image.planes[2]), static_cast<void *>(image.alpha), image.linesize[0], image.linesize[1], image.linesize[2], image.alphaLinesize);
+            //std::fprintf(stderr, "Y=%p U=%p V=%p A=%p | strides=%d/%d/%d/%d\n", static_cast<void *>(image.planes[0]), static_cast<void *>(image.planes[1]), static_cast<void *>(image.planes[2]), static_cast<void *>(image.alpha), image.linesize[0], image.linesize[1], image.linesize[2], image.alphaLinesize);
 
             if (image.alpha)
             {
@@ -213,7 +214,7 @@ int main(int argc, char *argv[])
 
                 const double average = static_cast<double>(sumAlpha) / static_cast<double>(image.w * image.h);
 
-                std::fprintf(stderr, "Alpha range: %u-%u, average=%.2f\n", minAlpha, maxAlpha, average);
+                //std::fprintf(stderr, "Alpha range: %u-%u, average=%.2f\n", minAlpha, maxAlpha, average);
             }
             if (!SDL_UpdateYUVTexture(texture, NULL, image.planes[0], image.linesize[0], image.planes[1], image.linesize[1], image.planes[2], image.linesize[2]))
 			{
