@@ -22,92 +22,15 @@
  *    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  *    SOFTWARE.
  */
-#include "include/decoder/OpusVorbisDecoder.hpp"
-#include "include/decoder/VPXDecoder.hpp"
 
-#include <mkvparser/mkvparser.h>
+#include "include/decoder/OpusDecoder.h"
+#include "include/decoder/VorbisDecoder.h"
+#include "include/decoder/VPXDecoder.h"
+
+#include <webm/file_reader.h>
 
 #include <cstdio>
 #include <memory>
-
-class MkvReader : public mkvparser::IMkvReader
-{
-public:
-	explicit MkvReader(const char *filePath) : m_file(std::fopen(filePath, "rb"))
-	{
-	}
-
-	~MkvReader()
-	{
-		if (m_file)
-		{
-			std::fclose(m_file);
-		}
-	}
-
-	int Read(long long pos, long len, unsigned char *buf) override
-	{
-		if (!m_file)
-		{
-			return -1;
-		}
-
-		if (std::fseek(m_file, static_cast<long>(pos), SEEK_SET) != 0)
-		{
-			return -1;
-		}
-
-		const size_t size = std::fread(buf, 1, static_cast<size_t>(len), m_file);
-		return size == static_cast<size_t>(len) ? 0 : -1;
-	}
-
-	int Length(long long *total, long long *available) override
-	{
-		if (!m_file)
-		{
-			return -1;
-		}
-
-		const long current_position = std::ftell(m_file);
-		if (current_position < 0)
-		{
-			return -1;
-		}
-
-		if (std::fseek(m_file, 0, SEEK_END) != 0)
-		{
-			return -1;
-		}
-
-		const long file_size = std::ftell(m_file);
-		if (file_size < 0)
-		{
-			std::fseek(m_file, current_position, SEEK_SET);
-			return -1;
-		}
-
-		if (total)
-		{
-			*total = file_size;
-		}
-
-		if (available)
-		{
-			*available = file_size;
-		}
-
-		std::fseek(m_file, current_position, SEEK_SET);
-		return 0;
-	}
-
-	bool isOpen() const
-	{
-		return m_file != nullptr;
-	}
-
-private:
-	FILE *m_file = nullptr;
-};
 
 int main(int argc, char *argv[])
 {
@@ -117,15 +40,16 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	std::unique_ptr<MkvReader> reader(new MkvReader(argv[1]));
+	FILE *file = std::fopen(argv[1], "rb");
 
-	if (!reader->isOpen())
+	if (!file)
 	{
 		std::fprintf(stderr, "Failed to open file: %s\n", argv[1]);
 		return 1;
 	}
 
-	WebMDemuxer demuxer(reader.release());
+	webm::FileReader reader(file);
+	WebMDemuxer demuxer(&reader);
 
 	if (!demuxer.isOpen())
 	{
@@ -134,23 +58,38 @@ int main(int argc, char *argv[])
 	}
 
 	VPXDecoder videoDec(demuxer, 8);
-	OpusVorbisDecoder audioDec(demuxer);
+
+	const WebMDemuxer::AUDIO_CODEC audioCodec = demuxer.getAudioCodec();
+
+	std::unique_ptr<VorbisDecoder> vorbisDec;
+	std::unique_ptr<OpusDecoder> opusDec;
+
+	switch (audioCodec)
+	{
+		case WebMDemuxer::AUDIO_VORBIS:
+			vorbisDec.reset(new VorbisDecoder(demuxer));
+			break;
+
+		case WebMDemuxer::AUDIO_OPUS:
+			opusDec.reset(new OpusDecoder(demuxer));
+			break;
+
+		default:
+			break;
+	}
 
 	std::fprintf(stderr, "File: %s\n", argv[1]);
 	std::fprintf(stderr, "Length: %.3f seconds\n", demuxer.getLength());
 
-	if (videoDec.isOpen())
-	{
-		std::fprintf(stderr, "Video decoder: opened\n");
-	}
-	else
-	{
-		std::fprintf(stderr, "Video decoder: unavailable\n");
-	}
+	std::fprintf(stderr, "Video decoder: %s\n", videoDec.isOpen() ? "opened" : "unavailable");
 
-	if (audioDec.isOpen())
+	if (vorbisDec)
 	{
-		std::fprintf(stderr, "Audio decoder: opened\n");
+		std::fprintf(stderr, "Audio decoder: Vorbis (%s)\n", vorbisDec->isOpen() ? "opened" : "unavailable");
+	}
+	else if (opusDec)
+	{
+		std::fprintf(stderr, "Audio decoder: Opus (%s)\n", opusDec->isOpen() ? "opened" : "unavailable");
 	}
 	else
 	{
@@ -161,20 +100,36 @@ int main(int argc, char *argv[])
 	WebMFrame audioFrame;
 	VPXDecoder::Image image;
 
-	const int channels = demuxer.getChannels();
-	const int bufferSamples = audioDec.getBufferSamples();
+	const bool audioDecoderOpen = (vorbisDec && vorbisDec->isOpen()) || (opusDec && opusDec->isOpen());
 
 	std::unique_ptr<short[]> pcm;
 
-	if (audioDec.isOpen() && channels > 0 && bufferSamples > 0)
+	if (audioDecoderOpen)
 	{
-		pcm.reset(new short[bufferSamples * channels]);
+		const int channels = demuxer.getChannels();
+
+		int bufferSamples = 0;
+
+		if (vorbisDec && vorbisDec->isOpen())
+		{
+			bufferSamples = vorbisDec->getBufferSamples();
+		}
+		else if (opusDec && opusDec->isOpen())
+		{
+			bufferSamples = opusDec->getBufferSamples();
+		}
+
+		if (channels > 0 && bufferSamples > 0)
+		{
+			pcm.reset(new short[bufferSamples * channels]);
+		}
 	}
 
 	unsigned int videoFrames = 0;
 	unsigned int audioFrames = 0;
 	unsigned int decodedImages = 0;
 
+	bool hasAlpha = false;
 	bool success = true;
 
 	while (demuxer.readFrame(&videoFrame, &audioFrame))
@@ -193,14 +148,28 @@ int main(int argc, char *argv[])
 			while (videoDec.getImage(image) == VPXDecoder::NO_ERROR)
 			{
 				++decodedImages;
+
+				std::fprintf(stderr, "VPX image: %ux%u, alpha=%s, alpha_plane=%p\n", image.w, image.h, image.alpha ? "yes" : "no", static_cast<void *>(image.alpha));
+
+				hasAlpha |= image.alpha != nullptr;
 			}
 		}
 
-		if (audioDec.isOpen() && audioFrame.isValid())
+		if (audioFrame.isValid() && audioDecoderOpen)
 		{
 			int numOutSamples = 0;
+			bool decoded = false;
 
-			if (!audioDec.getPCMS16(audioFrame, pcm.get(), numOutSamples))
+			if (vorbisDec && vorbisDec->isOpen())
+			{
+				decoded = vorbisDec->getPCMS16(audioFrame, pcm.get(), numOutSamples);
+			}
+			else if (opusDec && opusDec->isOpen())
+			{
+				decoded = opusDec->getPCMS16(audioFrame, pcm.get(), numOutSamples);
+			}
+
+			if (!decoded)
 			{
 				std::fprintf(stderr, "Audio decode error\n");
 				success = false;
@@ -211,6 +180,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	std::fprintf(stderr, "Alpha: %s\n", hasAlpha ? "yes" : "no");
 	std::fprintf(stderr, "Decoded video frames: %u\n", videoFrames);
 	std::fprintf(stderr, "Decoded video images: %u\n", decodedImages);
 	std::fprintf(stderr, "Decoded audio frames: %u\n", audioFrames);
