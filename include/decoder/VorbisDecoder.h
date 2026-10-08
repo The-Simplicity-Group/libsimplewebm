@@ -48,6 +48,7 @@ public:
 	}
 
 	bool getPCMS16(const WebMFrame &frame, short *buffer, int &numOutSamples);
+	bool getPCMF(const WebMFrame &frame, float *buffer, int &numOutSamples);
 
 private:
 	bool open(const WebMDemuxer &demuxer);

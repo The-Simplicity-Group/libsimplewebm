@@ -65,6 +65,22 @@ bool OpusDecoder::getPCMS16(const WebMFrame &frame, short *buffer, int &numOutSa
 	return true;
 }
 
+bool OpusDecoder::getPCMF(const WebMFrame &frame, float *buffer, int &numOutSamples)
+{
+	numOutSamples = 0;
+
+	if (!m_decoder || !m_decoder->decoder || !buffer || frame.bufferSize <= 0)
+		return false;
+
+	const int samples = opus_decode_float(m_decoder->decoder, frame.buffer, frame.bufferSize, buffer, m_numSamples, 0);
+
+	if (samples < 0)
+		return false;
+
+	numOutSamples = samples;
+	return true;
+}
+
 bool OpusDecoder::open(const WebMDemuxer &demuxer)
 {
 	int opusError = OPUS_OK;
