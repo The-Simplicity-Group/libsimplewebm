@@ -108,6 +108,49 @@ bool VorbisDecoder::getPCMS16(const WebMFrame &frame, short *buffer, int &numOut
 	return true;
 }
 
+bool VorbisDecoder::getPCMF(const WebMFrame &frame, float *buffer, int &numOutSamples)
+{
+	numOutSamples = 0;
+
+	if (!m_decoder || !buffer || frame.bufferSize <= 0)
+		return false;
+
+	m_decoder->packet.packet = frame.buffer;
+	m_decoder->packet.bytes = frame.bufferSize;
+
+	if (vorbis_synthesis(&m_decoder->block, &m_decoder->packet))
+		return false;
+
+	if (vorbis_synthesis_blockin(&m_decoder->dspState, &m_decoder->block))
+		return false;
+
+	const int maxSamples = getBufferSamples();
+
+	int samplesCount;
+	int count = 0;
+	float **pcm;
+
+	while ((samplesCount = vorbis_synthesis_pcmout(&m_decoder->dspState, &pcm)) > 0)
+	{
+		const int toConvert = samplesCount <= maxSamples ? samplesCount : maxSamples;
+
+		for (int c = 0; c < m_channels; ++c)
+		{
+			float *samples = pcm[c];
+			for (int i = 0, j = c; i < toConvert; ++i, j += m_channels)
+			{
+				buffer[count + j] = samples[i];
+			}
+		}
+
+		vorbis_synthesis_read(&m_decoder->dspState, toConvert);
+		count += toConvert;
+	}
+
+	numOutSamples = count;
+	return true;
+}
+
 bool VorbisDecoder::open(const WebMDemuxer &demuxer)
 {
 	size_t extradataSize = 0;
