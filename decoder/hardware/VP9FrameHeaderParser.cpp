@@ -376,9 +376,9 @@ Result<Metadata> Metadata::create(Slice<uint8_t> data)
     return { OK, metadata };
 }
 
-Frame Frame::create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize, std::vector<uint8_t> data)
+VP9Frame VP9Frame::create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize, std::vector<uint8_t> data)
 {
-    Frame frame;
+    VP9Frame frame;
 
     frame.data = data;
     frame.profile = parser.profile;
@@ -439,7 +439,7 @@ Frame Frame::create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t com
     return frame;
 }
 
-Slice<uint8_t> Frame::compressedHeaderData()
+Slice<uint8_t> VP9Frame::compressedHeaderData()
 {
     return {
         this->data.data() + this->uncompressedHeaderSize,
@@ -447,7 +447,7 @@ Slice<uint8_t> Frame::compressedHeaderData()
     };
 }
 
-Slice<uint8_t> Frame::compressedHeaderAndTileData()
+Slice<uint8_t> VP9Frame::compressedHeaderAndTileData()
 {
     return {
         this->data.data() + this->uncompressedHeaderSize,
@@ -455,7 +455,7 @@ Slice<uint8_t> Frame::compressedHeaderAndTileData()
     };
 }
 
-Slice<uint8_t> Frame::tileData()
+Slice<uint8_t> VP9Frame::tileData()
 {
     return {
         this->data.data() + this->uncompressedHeaderSize + this->compressedHeaderSize,
@@ -463,22 +463,22 @@ Slice<uint8_t> Frame::tileData()
     };
 }
 
-uint8_t Frame::lastRefFrameIndex()
+uint8_t VP9Frame::lastRefFrameIndex()
 {
     return this->refFrameIndices[0];
 }
 
-uint8_t Frame::goldenRefFrameIndex()
+uint8_t VP9Frame::goldenRefFrameIndex()
 {
     return this->refFrameIndices[1];
 }
 
-uint8_t Frame::altRefFrameIndex()
+uint8_t VP9Frame::altRefFrameIndex()
 {
     return this->refFrameIndices[2];
 }
 
-SUBSAMPLING Frame::subsampling()
+SUBSAMPLING VP9Frame::subsampling()
 {
     if (!this->subsamplingX && !this->subsamplingY)
     {
@@ -498,7 +498,7 @@ SUBSAMPLING Frame::subsampling()
     }
 }
 
-Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
+Result<std::vector<VP9Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
 {
     if (packet.empty())
     {
@@ -527,7 +527,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
         // Found a super frame.
         if (firstByte == lastByte)
         {
-            std::vector<Frame> frames = {};
+            std::vector<VP9Frame> frames = {};
             frames.reserve(frameCount);
 
             size_t indexStart = firstByteIndex + 1;
@@ -558,7 +558,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                         return { packetTruncateError };
                     }
 
-                    Result<Frame> frameResult = parseFrame(packet);
+                    Result<VP9Frame> frameResult = parseFrame(packet);
                     if (frameResult.error)
                     {
                         return { frameResult.error };
@@ -596,7 +596,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                         return { packetTruncateError };
                     }
 
-                    Result<Frame> firstFrameResult = parseFrame(packet);
+                    Result<VP9Frame> firstFrameResult = parseFrame(packet);
                     if (firstFrameResult.error)
                     {
                         return { firstFrameResult.error };
@@ -609,7 +609,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                         return { leftOverTruncateError };
                     }
 
-                    Result<Frame> secondFrameResult = parseFrame(leftOver);
+                    Result<VP9Frame> secondFrameResult = parseFrame(leftOver);
                     if (secondFrameResult.error)
                     {
                         return { secondFrameResult.error };
@@ -644,7 +644,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                             return { packetTruncateError };
                         }
 
-                        Result<Frame> frameResult = parseFrame(packet);
+                        Result<VP9Frame> frameResult = parseFrame(packet);
                         if (frameResult.error)
                         {
                             return { frameResult.error };
@@ -666,7 +666,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
     }
 
     // Normal frame.
-    Result<Frame> frameResult = parseFrame(packet);
+    Result<VP9Frame> frameResult = parseFrame(packet);
     if (frameResult.error)
     {
         return { frameResult.error };
@@ -705,7 +705,7 @@ Result<uint32_t> VP9Parser::readFrameSize(MutableSlice<uint8_t> entryData, size_
     };
 }
 
-Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
+Result<VP9Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
 {
     BitReader br = BitReader({ data.data(), data.size() });
 
@@ -761,7 +761,7 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
         this->refreshFrameFlags = 0;
         this->loopFilterLevel = 0;
 
-        Frame frame = Frame::create(*this, 0, 0, 0, {});
+        VP9Frame frame = VP9Frame::create(*this, 0, 0, 0, {});
         return { OK, frame };
     }
     else
@@ -1016,7 +1016,7 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
 
     size_t tileSize = data.size() - (uncompressedHeaderSize + compressedHeaderSize);
 
-    Frame frame = Frame::create(
+    VP9Frame frame = VP9Frame::create(
         *this,
         uncompressedHeaderSize,
         compressedHeaderSize,

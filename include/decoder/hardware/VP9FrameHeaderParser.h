@@ -359,7 +359,7 @@ namespace VP9FrameHeaderParser
     struct VP9Parser;
 
     /// A VP9 frame.
-    struct Frame
+    struct VP9Frame
     {
         /// The raw bitstream in the frame.
         std::vector<uint8_t> data;
@@ -501,7 +501,7 @@ namespace VP9FrameHeaderParser
         int16_t segmentFeatureData[8][4];
 
         /// Creates a frame from the parser state.
-        static Frame create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize, std::vector<uint8_t> data);
+        static VP9Frame create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize, std::vector<uint8_t> data);
         /// Returns a slice into the data of the compressed header.
         Slice<uint8_t> compressedHeaderData();
         /// Returns a slice into the data of the compressed header and tile data.
@@ -579,11 +579,11 @@ namespace VP9FrameHeaderParser
         /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
         /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
         /// parser in such cases results in garbage data or errors.
-        Result<std::vector<Frame>> parsePacket(std::vector<uint8_t> packet);
+        Result<std::vector<VP9Frame>> parsePacket(std::vector<uint8_t> packet);
 
     private:
         Result<uint32_t> readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index);
-        Result<Frame> parseFrame(std::vector<uint8_t> data);
+        Result<VP9Frame> parseFrame(std::vector<uint8_t> data);
         /// Implements spec "8.10 Reference frame update process".
         void refreshRefFrames();
         ERROR frameSyncCode(BitReader &br);
