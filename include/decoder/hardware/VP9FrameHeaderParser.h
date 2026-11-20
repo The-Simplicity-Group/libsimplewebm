@@ -99,6 +99,14 @@ class VP9FrameHeaderParser
         size_t len = 0;
     };
 
+    /// Equivalent for Rust's mutable slice type.
+    template<typename T>
+    struct MutableSlice
+    {
+        T *ptr = nullptr;
+        size_t len = 0;
+    };
+
     /// Equivalent for Rust's Result type.
     template<typename T>
     struct Result
@@ -120,38 +128,52 @@ class VP9FrameHeaderParser
             size_in_bits = slice.len * 8;
         }
 
-        Result<bool> read_bit()
+        template <typename T>
+        Result<T> read_unsigned(uint8_t count)
         {
-            Result<uint64_t> result = read_bits(1);
-            if (result.error != OK)
-            {
-                return {result.error};
-            }
-
-            return { OK, result.value != 0 };
-        }
-
-        Result<uint64_t> read_bits(uint8_t count)
-        {
-            if (count > 64 || count > get_remaining_bits())
+            if (count > (sizeof(T) * 8) || count > get_remaining_bits())
             {
                 return { ERROR_BIT_READER };
             }
 
-            uint64_t result = 0;
-
-            for (uint8_t i = 0; i < count; ++i)
+            Result<uint64_t> result = read_u64(count);
+            if (result.error)
             {
-                size_t byte_index = position_in_bits / 8;
-                size_t bit_index = position_in_bits % 8;
-
-                uint64_t bit = (data[byte_index] >> bit_index) & 1;
-
-                result |= bit << i;
-                ++position_in_bits;
+                return { result.error };
             }
 
-            return { OK, result };
+            return { OK, static_cast<T>(result.value) };
+        }
+
+        Result<uint64_t> read_u64(uint8_t count)
+        {
+            return read_unsigned<uint64_t>(count);
+        }
+
+        Result<uint32_t> read_u32(uint8_t count)
+        {
+            return read_unsigned<uint32_t>(count);
+        }
+
+        Result<uint16_t> read_u16(uint8_t count)
+        {
+            return read_unsigned<uint16_t>(count);
+        }
+
+        Result<uint8_t> read_u8(uint8_t count)
+        {
+            return read_unsigned<uint8_t>(count);
+        }
+
+        Result<bool> read_bool()
+        {
+            Result<uint8_t> result = read_u8(1);
+            if (result.error)
+            {
+                return { result.error };
+            }
+
+            return { OK, result.value != 0 };
         }
 
         size_t get_remaining_bits() const
@@ -406,9 +428,9 @@ class VP9FrameHeaderParser
         /// Unknown.
         RESET_FRAME_CONTEXT_UNKNOWN,
         /// Do not reset any frame context.
-        RESET_FRAME_CONTEXT_NO0,
+        RESET_FRAME_CONTEXT_NO_0,
         /// Do not reset any frame context.
-        RESET_FRAME_CONTEXT_NO1,
+        RESET_FRAME_CONTEXT_NO_1,
         /// Resets just the context specified in the frame header.
         RESET_FRAME_CONTEXT_SINGLE_RESET,
         /// Resets all contexts.
@@ -420,9 +442,9 @@ class VP9FrameHeaderParser
         switch (value)
         {
             case 0:
-                return RESET_FRAME_CONTEXT_NO0;
+                return RESET_FRAME_CONTEXT_NO_0;
             case 1:
-                return RESET_FRAME_CONTEXT_NO1;
+                return RESET_FRAME_CONTEXT_NO_1;
             case 2:
                 return RESET_FRAME_CONTEXT_SINGLE_RESET;
             case 3:
@@ -839,7 +861,7 @@ class VP9FrameHeaderParser
         bool show_frame = false;
         bool error_resilient_mode = false;
         bool intra_only = false;
-        RESET_FRAME_CONTEXT reset_frame_context = RESET_FRAME_CONTEXT_NO0;
+        RESET_FRAME_CONTEXT reset_frame_context = RESET_FRAME_CONTEXT_NO_0;
         uint8_t ref_frame_indices[3] = {};
         bool ref_frame_sign_bias[4] = {};
         bool allow_high_precision_mv = false;
@@ -888,46 +910,525 @@ class VP9FrameHeaderParser
         /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
         /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
         /// parser in such cases results in garbage data or errors.
-        ERROR parse_packet(std::vector<uint8_t> packet, std::vector<Frame> &result);
+        Result<std::vector<Frame>> parse_packet(std::vector<uint8_t> packet)
+        {
+            if (packet.empty())
+            {
+                return { OK, {} };
+            }
+
+            // Test for a super frame.
+            size_t last_byte_index = packet.size() - 1;
+            uint8_t last_byte = packet[last_byte_index];
+            if (last_byte & 0b1110'0000 == 0b1100'0000)
+            {
+                uint8_t bytes_per_framesize_minus_1 = (last_byte & 0b11000) >> 3;
+                uint8_t frames_in_superframe_minus_1 = last_byte & 0b111;
+                size_t bytes_size = bytes_per_framesize_minus_1 + 1;
+                size_t frame_count = frames_in_superframe_minus_1 + 1;
+                size_t index_size = 2 + (frame_count * bytes_size);
+                size_t first_byte_index = packet.size() - index_size;
+                uint8_t first_byte = packet[first_byte_index];
+
+                // Found a super frame.
+                if (first_byte == last_byte)
+                {
+                    std::vector<Frame> frames = {};
+                    frames.reserve(frame_count);
+
+                    size_t index_start = first_byte_index + 1;
+                    size_t entry_size = frame_count * bytes_size;
+
+                    std::vector<uint8_t> entry_data = {};
+                    entry_data.reserve(entry_size);
+                    entry_data.insert(entry_data.end(), packet.begin() + index_start, packet.begin() + index_start + entry_size);
+
+                    switch (frame_count)
+                    {
+                        case 1:
+                        {
+                            // Odd, but valid bitstream configuration.
+                            Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0);
+                            if (frame_size.error)
+                            {
+                                return { frame_size.error };
+                            }
+
+                            packet.resize(frame_size.value);
+                            Result<Frame> frame = parse_frame(packet);
+                            if (frame.error)
+                            {
+                                return { frame.error };
+                            }
+
+                            frames.push_back(frame.value);
+                            break;
+                        }
+                        case 2:
+                        {
+                            // Most common case. The first frame produces a frame that is not displayed but
+                            // stored as a reference frame. The second frame is mostly empty and references
+                            // the previously stored frame.
+                            Result<size_t> first_frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0);
+                            if (first_frame_size.error)
+                            {
+                                return { first_frame_size.error };
+                            }
+                            std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + first_frame_size.value, packet.end());
+                            packet.resize(first_frame_size.value);
+                            Result<Frame> first_frame = parse_frame(packet);
+                            if (first_frame.error)
+                            {
+                                return { first_frame.error };
+                            }
+
+                            Result<size_t> second_frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 1);
+                            if (second_frame_size.error)
+                            {
+                                return { second_frame_size.error };
+                            }
+                            left_over.resize(second_frame_size.value);
+                            Result<Frame> second_frame = parse_frame(left_over);
+                            if (second_frame.error)
+                            {
+                                return { second_frame.error };
+                            }
+
+                            frames.push_back(first_frame.value);
+                            frames.push_back(second_frame.value);
+                            break;
+                        }
+                        default:
+                        {
+                            // Odd, but also a valid bitstream configuration.
+                            for (size_t frame_index = 0; frame_index < frame_count; frame_index++)
+                            {
+                                Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, frame_index);
+                                if (frame_size.error)
+                                {
+                                    return { frame_size.error };
+                                }
+
+                                std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + frame_size.value, packet.end());
+                                packet.resize(frame_size.value);
+                                Result<Frame> frame = parse_frame(packet);
+                                if (frame.error)
+                                {
+                                    return { frame.error };
+                                }
+                                frames.push_back(frame.value);
+
+                                packet = left_over;
+                            }
+                            break;
+                        }
+                    }
+
+                    return { OK, frames };
+                }
+            }
+
+            // Normal frame.
+            Result<Frame> frame = parse_frame(packet);
+            if (frame.error)
+            {
+                return { frame.error };
+            }
+            return { OK, { frame.value } };
+        }
 
     private:
-        ERROR read_frame_size(Slice<uint8_t> entry_data, size_t bytes_size, size_t index, uint8_t &frame_size);
+        Result<size_t> read_frame_size(MutableSlice<uint8_t> entry_data, size_t bytes_size, size_t index)
+        {
+            // sic! Even though the values inside the uncompressed header are saved in BE,
+            // these values are saved in LE.
+            switch (bytes_size)
+            {
+                case 1:
+                {
+                    return { OK, u8_from_le_bytes(entry_data.ptr + index) };
+                }
+                case 2:
+                {
+                    return { OK, u16_from_le_bytes(entry_data.ptr + (index * 2)) };
+                }
+                case 3:
+                {
+                    uint8_t *three_bytes = entry_data.ptr + (index * 3);
+                    uint8_t four_bytes[4] = { three_bytes[0], three_bytes[1], three_bytes[2], 0 };
+                    return { OK, u32_from_le_bytes(four_bytes) };
+                }
+                case 4:
+                {
+                    return { OK, u32_from_le_bytes(entry_data.ptr + (index * 4)) };
+                }
+                default:
+                {
+                    return { ERROR_INVALID_FRAME_SIZE_BYTE_SIZE };
+                }
+            };
+        }
 
-        ERROR parse_frame(Slice<uint8_t> data, Frame &frame);
+        Result<Frame> parse_frame(std::vector<uint8_t> data)
+        {
+            BitReader br = BitReader({ data.data(), data.size() });
 
-        void read_refresh_frame_flags();
+            Result<uint8_t> frame_marker = br.read_u8(2);
+            if (frame_marker.error)
+            {
+                return { frame_marker.error };
+            }
+            if (frame_marker.value != 2) {
+                return { ERROR_INVALID_FRAME_MARKER };
+            }
 
-        ERROR read_frame_sync_code(BitReader &bit_reader);
+            Result<uint8_t> profile_low_bit = br.read_u8(1);
+            if (profile_low_bit.error)
+            {
+                return { profile_low_bit.error };
+            }
+            Result<uint8_t> profile_high_bit = br.read_u8(1);
+            if (profile_high_bit.error)
+            {
+                return { profile_high_bit.error };
+            }
+            this->profile = int_to_profile((profile_high_bit.value << 1) + profile_low_bit.value);
+            if (this->profile == PROFILE_3)
+            {
+                Result<uint8_t> _reserved_zero = br.read_u8(1);
+                if (_reserved_zero.error)
+                {
+                    return { _reserved_zero.error };
+                }
+            }
 
-        ERROR read_color_config(BitReader &bit_reader);
+            Result<bool> show_existing_frame_result = br.read_bool();
+            if (show_existing_frame_result.error)
+            {
+                return { show_existing_frame_result.error };
+            }
+            this->show_existing_frame = show_existing_frame_result.value;
 
-        ERROR read_frame_size(BitReader &bit_reader);
+            if (this->show_existing_frame)
+            {
+                Result<uint8_t> frame_to_show_map_idx_result = br.read_u8(3);
+                if (frame_to_show_map_idx_result.error)
+                {
+                    return { frame_to_show_map_idx_result.error };
+                }
+                this->frame_to_show_map_idx = { true, frame_to_show_map_idx_result.value };
+                this->refresh_frame_flags = 0;
+                this->loop_filter_level = 0;
 
-        ERROR read_render_size(BitReader &bit_reader);
+                Frame frame = Frame::create(*this, 0, 0, 0, {});
+                return { OK, frame };
+            }
+            else
+            {
+                this->frame_to_show_map_idx = { false };
+            }
 
-        ERROR read_frame_size_with_refs(BitReader &bit_reader);
+            this->last_frame_type = this->frame_type;
 
-        ERROR calculate_image_size();
+            Result<bool> frame_type_bool = br.read_bool();
+            if (frame_type_bool.error)
+            {
+                return { frame_type_bool.error };
+            }
+            this->frame_type = int_to_frame_type(frame_type_bool.value);
+
+            Result<bool> show_frame_result = br.read_bool();
+            if (show_frame_result.error)
+            {
+                return { show_frame_result.error };
+            }
+            this->show_frame = show_frame_result.value;
+
+            Result<bool> error_resilient_mode_result = br.read_bool();
+            if (error_resilient_mode_result.error)
+            {
+                return { error_resilient_mode_result.error };
+            }
+            this->error_resilient_mode = error_resilient_mode_result.value;
+
+            if (this->frame_type == FRAME_TYPE_KEY_FRAME)
+            {
+                ERROR frame_sync_code_error = frame_sync_code(br);
+                if (frame_sync_code_error)
+                {
+                    return { frame_sync_code_error };
+                }
+                ERROR color_config_error = color_config(br);
+                if (color_config_error)
+                {
+                    return { color_config_error };
+                }
+                ERROR frame_size_error = frame_size(br);
+                if (frame_size_error)
+                {
+                    return { frame_size_error };
+                }
+                ERROR render_size_error = render_size(br);
+                if (render_size_error)
+                {
+                    return { render_size_error };
+                }
+                this->refresh_frame_flags = 0xFF;
+            }
+            else
+            {
+                if (!this->show_frame)
+                {
+                    Result<bool> intra_only_result = br.read_bool();
+                    if (intra_only_result.error)
+                    {
+                        return { intra_only_result.error };
+                    }
+                    this->intra_only = intra_only_result.value;
+                }
+                else
+                {
+                    this->intra_only = false;
+                };
+
+                if (!this->error_resilient_mode)
+                {
+                    Result<uint8_t> reset_frame_context_result = br.read_u8(2);
+                    if (reset_frame_context_result.error)
+                    {
+                        return { reset_frame_context_result.error };
+                    }
+                    this->reset_frame_context = int_to_reset_frame_context(reset_frame_context_result.value);
+                }
+                else
+                {
+                    this->reset_frame_context = RESET_FRAME_CONTEXT_NO_0;
+                };
+
+                if (this->intra_only)
+                {
+                    ERROR frame_sync_code_error = frame_sync_code(br);
+                    if (frame_sync_code_error)
+                    {
+                        return { frame_sync_code_error };
+                    }
+                    if (this->profile > PROFILE_0) {
+                        ERROR color_config_error = color_config(br);
+                        if (color_config_error)
+                        {
+                            return { color_config_error };
+                        }
+                    } else {
+                        this->color_depth = COLOR_DEPTH_8;
+                        this->color_space = COLOR_SPACE_BT601;
+                        this->subsampling_x = true;
+                        this->subsampling_y = true;
+                    }
+                    Result<uint8_t> refresh_frame_flags_result = br.read_u8(8);
+                    if (refresh_frame_flags_result.error)
+                    {
+                        return { refresh_frame_flags_result.error };
+                    }
+                    this->refresh_frame_flags = refresh_frame_flags_result.value;
+                    ERROR frame_size_error = frame_size(br);
+                    if (frame_size_error)
+                    {
+                        return { frame_size_error };
+                    }
+                    ERROR render_size_error = render_size(br);
+                    if (render_size_error)
+                    {
+                        return { render_size_error };
+                    }
+                }
+                else
+                {
+                    Result<uint8_t> refresh_frame_flags_result = br.read_u8(8);
+                    if (refresh_frame_flags_result.error)
+                    {
+                        return { refresh_frame_flags_result.error };
+                    }
+                    this->refresh_frame_flags = refresh_frame_flags_result.value;
+                    for (size_t i = 0; i < 3; i++)
+                    {
+                        Result<uint8_t> ref_frame_indices_result = br.read_u8(3);
+                        if (ref_frame_indices_result.error)
+                        {
+                            return { ref_frame_indices_result.error };
+                        }
+                        this->ref_frame_indices[i] = ref_frame_indices_result.value;
+
+                        Result<bool> ref_frame_sign_bias_result = br.read_bool();
+                        if (ref_frame_sign_bias_result.error)
+                        {
+                            return { ref_frame_sign_bias_result.error };
+                        }
+                        this->ref_frame_sign_bias[LAST_FRAME + i] = ref_frame_sign_bias_result.value;
+                    }
+                    ERROR frame_size_with_refs_error = frame_size_with_refs(br);
+                    if (frame_size_with_refs_error)
+                    {
+                        return { frame_size_with_refs_error };
+                    }
+                    Result<bool> allow_high_precision_mv_result = br.read_bool();
+                    if (allow_high_precision_mv_result.error)
+                    {
+                        return { allow_high_precision_mv_result.error };
+                    }
+                    ERROR read_interpolation_filter_error = read_interpolation_filter(br);
+                    if (read_interpolation_filter_error) {
+                        return { read_interpolation_filter_error };
+                    }
+                }
+            }
+
+            if (!this->error_resilient_mode)
+            {
+                Result<bool> refresh_frame_context_result = br.read_bool();
+                if (refresh_frame_context_result.error)
+                {
+                    return { refresh_frame_context_result.error };
+                }
+                this->refresh_frame_context = refresh_frame_context_result.value;
+
+                Result<bool> frame_parallel_decoding_mode_result = br.read_bool();
+                if (frame_parallel_decoding_mode_result.error)
+                {
+                    return { frame_parallel_decoding_mode_result.error };
+                }
+                this->frame_parallel_decoding_mode = frame_parallel_decoding_mode_result.value;
+            }
+            else
+            {
+                this->refresh_frame_context = false;
+                this->frame_parallel_decoding_mode = false;
+            };
+
+            Result<uint8_t> frame_context_idx_result = br.read_u8(2);
+            if (frame_context_idx_result.error)
+            {
+                return { frame_context_idx_result.error };
+            }
+            this->frame_context_idx = frame_context_idx_result.value;
+
+            if (this->intra_only || this->error_resilient_mode)
+            {
+                this->frame_context_idx = 0;
+            }
+
+            if (this->frame_type == FRAME_TYPE_KEY_FRAME || this->error_resilient_mode || this->intra_only)
+            {
+                // Reset the loop filter deltas.
+                this->loop_filter_ref_deltas[INTRA_FRAME] = 1;
+                this->loop_filter_ref_deltas[LAST_FRAME] = 0;
+                this->loop_filter_ref_deltas[GOLDEN_FRAME] = -1;
+                this->loop_filter_ref_deltas[ALTREF_FRAME] = -1;
+                this->loop_filter_mode_deltas[0] = 0;
+                this->loop_filter_mode_deltas[1] = 0;
+            }
+            ERROR loop_filter_params_error = loop_filter_params(br);
+            if (loop_filter_params_error)
+            {
+                return { loop_filter_params_error };
+            }
+
+            ERROR quantization_params_error = quantization_params(br);
+            if (quantization_params_error)
+            {
+                return { quantization_params_error };
+            }
+            ERROR segmentation_params_error = segmentation_params(br);
+            if (segmentation_params_error)
+            {
+                return { segmentation_params_error };
+            }
+            ERROR tile_info_error = tile_info(br);
+            if (tile_info_error)
+            {
+                return { tile_info_error };
+            }
+
+            Result<uint16_t> compressed_header_size_result = br.read_u16(16);
+            if (compressed_header_size_result.error)
+            {
+                return { compressed_header_size_result.error };
+            }
+            size_t compressed_header_size = compressed_header_size_result.value;
+            ERROR trailing_bits_error = trailing_bits(br);
+            if (trailing_bits_error)
+            {
+                return { trailing_bits_error };
+            }
+            size_t uncompressed_header_size = br.position_in_bits / 8;
+
+            size_t size = data.size();
+            size_t tile_size = size - (uncompressed_header_size + compressed_header_size);
+
+            Frame frame = Frame::create(
+                *this,
+                uncompressed_header_size,
+                compressed_header_size,
+                tile_size,
+                data
+            );
+
+            refresh_ref_frames();
+
+            return { OK, frame };
+        }
+
+        void refresh_ref_frames();
+
+        ERROR frame_sync_code(BitReader &bit_reader);
+
+        ERROR color_config(BitReader &bit_reader);
+
+        ERROR frame_size(BitReader &bit_reader);
+
+        ERROR render_size(BitReader &bit_reader);
+
+        ERROR frame_size_with_refs(BitReader &bit_reader);
+
+        ERROR compute_image_size();
 
         ERROR read_interpolation_filter(BitReader &bit_reader);
 
-        ERROR read_loop_filter_params(BitReader &bit_reader);
+        ERROR loop_filter_params(BitReader &bit_reader);
 
-        ERROR read_quantization_params(BitReader &bit_reader);
+        ERROR quantization_params(BitReader &bit_reader);
 
         ERROR read_delta_q(BitReader &bit_reader);
 
-        ERROR read_segmentation_params(BitReader &bit_reader);
+        ERROR segmentation_params(BitReader &bit_reader);
 
         ERROR read_prob(BitReader &bit_reader);
 
-        ERROR read_tile_info(BitReader &bit_reader);
+        ERROR tile_info(BitReader &bit_reader);
 
-        ERROR calculate_min_log2_tile_cols(BitReader &bit_reader);
+        ERROR calc_min_log2_tile_cols(BitReader &bit_reader);
 
-        ERROR calculate_max_log2_tile_cols(BitReader &bit_reader);
+        ERROR calc_max_log2_tile_cols(BitReader &bit_reader);
 
-        ERROR read_trailing_bits(BitReader &bit_reader);
+        ERROR trailing_bits(BitReader &bit_reader);
+
+        static constexpr uint32_t u32_from_le_bytes(const uint8_t *bytes)
+        {
+            return static_cast<uint32_t>(bytes[0])
+                | (static_cast<uint32_t>(bytes[1]) << 8)
+                | (static_cast<uint32_t>(bytes[2]) << 16)
+                | (static_cast<uint32_t>(bytes[3]) << 24);
+        }
+
+        static constexpr uint16_t u16_from_le_bytes(const uint8_t *bytes)
+        {
+            return static_cast<uint16_t>(bytes[0])
+                | (static_cast<uint16_t>(bytes[1]) << 8);
+        }
+
+        static constexpr uint8_t u8_from_le_bytes(const uint8_t *bytes)
+        {
+            return bytes[0];
+        }
     };
 };
 
