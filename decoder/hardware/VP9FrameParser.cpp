@@ -167,7 +167,7 @@ Result<T> BitReader::readInverseSigned(uint8_t count)
     }
 }
 
-constexpr PROFILE VP9FrameHeaderParser::u8ToProfile(uint8_t value)
+constexpr PROFILE VP9FrameParser::u8ToProfile(uint8_t value)
 {
     switch (value)
     {
@@ -184,7 +184,7 @@ constexpr PROFILE VP9FrameHeaderParser::u8ToProfile(uint8_t value)
     }
 }
 
-constexpr METADATA_SUBSAMPLING VP9FrameHeaderParser::u8ToMetadataSubsampling(uint8_t value)
+constexpr METADATA_SUBSAMPLING VP9FrameParser::u8ToMetadataSubsampling(uint8_t value)
 {
     switch (value)
     {
@@ -201,7 +201,7 @@ constexpr METADATA_SUBSAMPLING VP9FrameHeaderParser::u8ToMetadataSubsampling(uin
     }
 }
 
-constexpr COLOR_SPACE VP9FrameHeaderParser::u8ToColorSpace(uint8_t value)
+constexpr COLOR_SPACE VP9FrameParser::u8ToColorSpace(uint8_t value)
 {
     switch (value)
     {
@@ -224,7 +224,7 @@ constexpr COLOR_SPACE VP9FrameHeaderParser::u8ToColorSpace(uint8_t value)
     }
 }
 
-constexpr COLOR_DEPTH VP9FrameHeaderParser::u8ToColorDepth(uint8_t value)
+constexpr COLOR_DEPTH VP9FrameParser::u8ToColorDepth(uint8_t value)
 {
     switch (value)
     {
@@ -239,7 +239,7 @@ constexpr COLOR_DEPTH VP9FrameHeaderParser::u8ToColorDepth(uint8_t value)
     }
 }
 
-constexpr COLOR_RANGE VP9FrameHeaderParser::boolToColorRange(bool value)
+constexpr COLOR_RANGE VP9FrameParser::boolToColorRange(bool value)
 {
     switch (value)
     {
@@ -250,7 +250,7 @@ constexpr COLOR_RANGE VP9FrameHeaderParser::boolToColorRange(bool value)
     }
 }
 
-constexpr FRAME_TYPE VP9FrameHeaderParser::boolToFrameType(bool value)
+constexpr FRAME_TYPE VP9FrameParser::boolToFrameType(bool value)
 {
     switch (value)
     {
@@ -261,7 +261,7 @@ constexpr FRAME_TYPE VP9FrameHeaderParser::boolToFrameType(bool value)
     }
 }
 
-constexpr RESET_FRAME_CONTEXT VP9FrameHeaderParser::u8ToResetFrameContext(uint8_t value)
+constexpr RESET_FRAME_CONTEXT VP9FrameParser::u8ToResetFrameContext(uint8_t value)
 {
     switch (value)
     {
@@ -278,7 +278,7 @@ constexpr RESET_FRAME_CONTEXT VP9FrameHeaderParser::u8ToResetFrameContext(uint8_
     }
 }
 
-constexpr LEVEL VP9FrameHeaderParser::u8ToLevel(uint8_t value)
+constexpr LEVEL VP9FrameParser::u8ToLevel(uint8_t value)
 {
     switch (value)
     {

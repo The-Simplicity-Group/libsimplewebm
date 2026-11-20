@@ -123,8 +123,6 @@ namespace VP9FrameParser
         size_t positionInBits = 0;
 
         BitReader(Slice<uint8_t> slice);
-        Result<uint64_t> readU64(uint8_t count);
-        Result<uint32_t> readU32(uint8_t count);
         Result<uint16_t> readU16(uint8_t count);
         Result<uint8_t> readU8(uint8_t count);
         Result<bool> readBool();
