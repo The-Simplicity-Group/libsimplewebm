@@ -58,9 +58,9 @@
  *    DEALINGS IN THE SOFTWARE.
  */
 
-#include "include/decoder/hardware/VP9FrameHeaderParser.h"
+#include "include/decoder/hardware/VP9FrameParser.h"
 
-using namespace VP9FrameHeaderParser;
+using namespace VP9FrameParser;
 
 BitReader::BitReader(Slice<uint8_t> slice)
 {

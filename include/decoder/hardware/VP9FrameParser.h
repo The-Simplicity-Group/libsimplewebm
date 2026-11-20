@@ -58,15 +58,15 @@
  *    DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VP9_FRAME_HEADER_PARSER_H
-#define VP9_FRAME_HEADER_PARSER_H
+#ifndef VP9_FRAME_PARSER_H
+#define VP9_FRAME_PARSER_H
 
 #include <stdint.h>
 #include <vector>
 
-namespace VP9FrameHeaderParser
+namespace VP9FrameParser
 {
-    /// Contains all the possible errors in VP9FrameHeaderParser.
+    /// Contains all the possible errors in VP9FrameParser.
     enum ERROR : uint8_t
     {
         OK,
@@ -610,4 +610,4 @@ namespace VP9FrameHeaderParser
     };
 };
 
-#endif // VP9_FRAME_HEADER_PARSER_H
+#endif // VP9_FRAME_PARSER_H
