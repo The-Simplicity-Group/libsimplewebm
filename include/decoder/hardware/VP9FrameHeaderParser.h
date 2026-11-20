@@ -70,6 +70,7 @@ class VP9FrameHeaderParser
     enum ERROR : uint8_t
     {
         OK,
+        ERROR_FAIL,
         ERROR_BIT_READER,
         ERROR_IO,
         ERROR_TRY_FROM_SLICE,
@@ -173,11 +174,21 @@ class VP9FrameHeaderParser
             return this->size_in_bits - this->position_in_bits;
         }
 
+        bool is_aligned(uint32_t alignment_bytes) const
+        {
+            return this->position_in_bits % (static_cast<uint64_t>(alignment_bytes) * 8) == 0;
+        }
+
     private:
-        template <typename T>
+        template<typename T>
         Result<T> read_unsigned(uint8_t count)
         {
-            if (count > (sizeof(T) * 8) || count > get_remaining_bits())
+            if (count > 64)
+            {
+                return { ERROR_BIT_READER };
+            }
+
+            if (count > get_remaining_bits())
             {
                 return { ERROR_BIT_READER };
             }
@@ -186,12 +197,13 @@ class VP9FrameHeaderParser
 
             for (uint8_t i = 0; i < count; ++i)
             {
-                uint8_t byte = data[this->position_in_bits / 8];
-                uint8_t bit = (byte >> (this->position_in_bits % 8)) & 1;
+                size_t byte_index = this->position_in_bits / 8;
+                uint8_t byte = this->data[byte_index];
+                T shift = 7 - (this->position_in_bits % 8);
+                T bit = static_cast<T>(byte >> shift) & 1;
+                value = (value << 1) | bit;
 
-                value |= static_cast<T>(bit) << i;
-
-                ++position_in_bits;
+                ++this->position_in_bits;
             }
 
             return { OK, value };
@@ -875,7 +887,8 @@ class VP9FrameHeaderParser
         }
 
         /// The subsampling the frame is using.
-        SUBSAMPLING subsampling() {
+        SUBSAMPLING subsampling()
+        {
             if (!subsampling_x && !subsampling_y)
             {
                 return SUBSAMPLING_YUV_444;
@@ -1123,7 +1136,8 @@ class VP9FrameHeaderParser
             {
                 return { frame_marker.error };
             }
-            if (frame_marker.value != 2) {
+            if (frame_marker.value != 2)
+            {
                 return { ERROR_INVALID_FRAME_MARKER };
             }
 
@@ -1257,7 +1271,8 @@ class VP9FrameHeaderParser
                     {
                         return { frame_sync_code_error };
                     }
-                    if (this->profile > PROFILE_0) {
+                    if (this->profile > PROFILE_0)
+                    {
                         ERROR color_config_error = color_config(br);
                         if (color_config_error)
                         {
@@ -1321,7 +1336,8 @@ class VP9FrameHeaderParser
                         return { allow_high_precision_mv_result.error };
                     }
                     ERROR read_interpolation_filter_error = read_interpolation_filter(br);
-                    if (read_interpolation_filter_error) {
+                    if (read_interpolation_filter_error)
+                    {
                         return { read_interpolation_filter_error };
                     }
                 }
@@ -1423,7 +1439,8 @@ class VP9FrameHeaderParser
         }
 
         // Implements spec "8.10 Reference frame update process".
-        void refresh_ref_frames() {
+        void refresh_ref_frames()
+        {
             uint8_t flags = this->refresh_frame_flags;
             uint16_t new_width = this->width;
             uint16_t new_height = this->height;
@@ -1829,17 +1846,275 @@ class VP9FrameHeaderParser
             }
         }
 
-        ERROR segmentation_params(BitReader &br);
+        ERROR segmentation_params(BitReader &br)
+        {
+            Result<bool> segmentation_enabled_result = br.read_bool();
+            if (segmentation_enabled_result.error)
+            {
+                return segmentation_enabled_result.error;
+            }
+            this->segmentation_enabled = segmentation_enabled_result.value;
 
-        ERROR read_prob(BitReader &br);
+            if (this->segmentation_enabled)
+            {
+                Result<bool> segmentation_update_map_result = br.read_bool();
+                if (segmentation_update_map_result.error)
+                {
+                    return segmentation_update_map_result.error;
+                }
+                this->segmentation_update_map = segmentation_update_map_result.value;
 
-        ERROR tile_info(BitReader &br);
+                if (this->segmentation_update_map)
+                {
+                    for (uint8_t i = 0; i < 7; ++i)
+                    {
+                        Result<uint8_t> segment_tree_prob_result = read_prob(br);
+                        if (segment_tree_prob_result.error)
+                        {
+                            return segment_tree_prob_result.error;
+                        }
 
-        ERROR calc_min_log2_tile_cols(BitReader &br);
+                        this->segment_tree_probs[i] = segment_tree_prob_result.value;
+                    }
 
-        ERROR calc_max_log2_tile_cols(BitReader &br);
+                    Result<bool> segmentation_temporal_update_result = br.read_bool();
+                    if (segmentation_temporal_update_result.error)
+                    {
+                        return segmentation_temporal_update_result.error;
+                    }
+                    this->segmentation_temporal_update = segmentation_temporal_update_result.value;
 
-        ERROR trailing_bits(BitReader &br);
+                    for (uint8_t i = 0; i < 3; ++i)
+                    {
+                        if (this->segmentation_temporal_update)
+                        {
+                            Result<uint8_t> segment_pred_prob_result = read_prob(br);
+                            if (segment_pred_prob_result.error)
+                            {
+                                return segment_pred_prob_result.error;
+                            }
+
+                            this->segment_pred_probs[i] = segment_pred_prob_result.value;
+                        }
+                        else
+                        {
+                            this->segment_pred_probs[i] = 255;
+                        }
+                    }
+                }
+
+                Result<bool> segmentation_update_data_result = br.read_bool();
+                if (segmentation_update_data_result.error)
+                {
+                    return segmentation_update_data_result.error;
+                }
+                this->segmentation_update_data = segmentation_update_data_result.value;
+
+                if (this->segmentation_update_data)
+                {
+                    Result<bool> segmentation_abs_or_delta_update_result = br.read_bool();
+                    if (segmentation_abs_or_delta_update_result.error)
+                    {
+                        return segmentation_abs_or_delta_update_result.error;
+                    }
+                    this->segmentation_abs_or_delta_update = segmentation_abs_or_delta_update_result.value;
+
+                    for (uint8_t i = 0; i < MAX_SEGMENTS; ++i)
+                    {
+                        Result<bool> segment_feature_enabled_alt_q_result = br.read_bool();
+                        if (segment_feature_enabled_alt_q_result.error)
+                        {
+                            return segment_feature_enabled_alt_q_result.error;
+                        }
+                        this->segment_feature_enabled[i][SEG_LVL_ALT_Q] = segment_feature_enabled_alt_q_result.value;
+
+                        if (this->segment_feature_enabled[i][SEG_LVL_ALT_Q])
+                        {
+                            Result<int16_t> segment_feature_data_alt_q_result = br.read_inverse_i16(8);
+                            if (segment_feature_data_alt_q_result.error)
+                            {
+                                return segment_feature_data_alt_q_result.error;
+                            }
+                            this->segment_feature_data[i][SEG_LVL_ALT_Q] = segment_feature_data_alt_q_result.value;
+                        };
+
+                        Result<bool> segment_feature_enabled_alt_l_result = br.read_bool();
+                        if (segment_feature_enabled_alt_l_result.error)
+                        {
+                            return segment_feature_enabled_alt_l_result.error;
+                        }
+                        this->segment_feature_enabled[i][SEG_LVL_ALT_L] = segment_feature_enabled_alt_l_result.value;
+
+                        if (this->segment_feature_enabled[i][SEG_LVL_ALT_L])
+                        {
+                            Result<int16_t> segment_feature_data_alt_l_result = br.read_inverse_i16(6);
+                            if (segment_feature_data_alt_l_result.error)
+                            {
+                                return segment_feature_data_alt_l_result.error;
+                            }
+                            this->segment_feature_data[i][SEG_LVL_ALT_L] = segment_feature_data_alt_l_result.value;
+                        };
+
+                        Result<bool> segment_feature_enabled_ref_frame_result = br.read_bool();
+                        if (segment_feature_enabled_ref_frame_result.error)
+                        {
+                            return segment_feature_enabled_ref_frame_result.error;
+                        }
+                        this->segment_feature_enabled[i][SEG_LVL_REF_FRAME] = segment_feature_enabled_ref_frame_result.value;
+
+                        if (this->segment_feature_enabled[i][SEG_LVL_REF_FRAME])
+                        {
+                            Result<int16_t> segment_feature_data_ref_frame_result = br.read_inverse_i16(6);
+                            if (segment_feature_data_ref_frame_result.error)
+                            {
+                                return segment_feature_data_ref_frame_result.error;
+                            }
+                            this->segment_feature_data[i][SEG_LVL_REF_FRAME] = segment_feature_data_ref_frame_result.value;
+                        };
+
+                        Result<bool> segment_feature_enabled_skip_result = br.read_bool();
+                        if (segment_feature_enabled_skip_result.error)
+                        {
+                            return segment_feature_enabled_skip_result.error;
+                        }
+                        this->segment_feature_data[i][SEG_LVL_SKIP] = 0;
+                    }
+                }
+            }
+
+            return OK;
+        }
+
+        Result<uint8_t> read_prob(BitReader &br)
+        {
+            Result<bool> prob_coded_result = br.read_bool();
+            if (prob_coded_result.error)
+            {
+                return { prob_coded_result.error };
+            }
+
+            if (prob_coded_result.value)
+            {
+                Result<uint8_t> prob_result = br.read_u8(8);
+                if (prob_result.error)
+                {
+                    return { prob_result.error };
+                }
+
+                return { OK, prob_result.value };
+            }
+            else
+            {
+                return { OK, 255 };
+            }
+        }
+
+        ERROR tile_info(BitReader &br)
+        {
+            Result<uint8_t> min_log2_tile_cols_result = calc_min_log2_tile_cols();
+            if (min_log2_tile_cols_result.error)
+            {
+                return min_log2_tile_cols_result.error;
+            }
+            Result<uint8_t> max_log2_tile_cols_result = calc_max_log2_tile_cols();
+            if (max_log2_tile_cols_result.error)
+            {
+                return max_log2_tile_cols_result.error;
+            }
+
+            this->tile_cols_log2 = min_log2_tile_cols_result.value;
+            while (this->tile_cols_log2 < max_log2_tile_cols_result.value)
+            {
+                Result<bool> increment_tile_cols_log2_result = br.read_bool();
+                if (increment_tile_cols_log2_result.error)
+                {
+                    return increment_tile_cols_log2_result.error;
+                }
+
+                if (increment_tile_cols_log2_result.value)
+                {
+                    this->tile_cols_log2 += 1;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            Result<uint8_t> tile_rows_log2_result = br.read_u8(1);
+            if (tile_rows_log2_result.error)
+            {
+                return tile_rows_log2_result.error;
+            }
+
+            this->tile_rows_log2 = tile_rows_log2_result.value;
+            if (this->tile_rows_log2 == 1)
+            {
+                Result<uint8_t> increment_tile_rows_log2_result = br.read_u8(1);
+                if (increment_tile_rows_log2_result.error)
+                {
+                    return increment_tile_rows_log2_result.error;
+                }
+
+                this->tile_rows_log2 += increment_tile_rows_log2_result.value;
+            }
+
+            return OK;
+        }
+
+        Result<uint8_t> calc_min_log2_tile_cols()
+        {
+            uint16_t sb64_cols_u16 = (this->mi_cols + 7) >> 3;
+            if (sb64_cols_u16 > UINT8_MAX)
+            {
+                return { ERROR_FAIL };
+            }
+            uint8_t sb64_cols = static_cast<uint8_t>(sb64_cols_u16);
+
+            uint8_t min_log2 = 0;
+            while ((MAX_TILE_WIDTH_B64 << min_log2) < sb64_cols)
+            {
+                min_log2 += 1;
+            }
+
+            return { OK, min_log2 };
+        }
+
+        Result<uint8_t> calc_max_log2_tile_cols()
+        {
+            uint16_t sb64_cols_u16 = (this->mi_cols + 7) >> 3;
+            if (sb64_cols_u16 > UINT8_MAX)
+            {
+                return { ERROR_FAIL };
+            }
+            uint8_t sb64_cols = static_cast<uint8_t>(sb64_cols_u16);
+
+            uint8_t max_log2 = 1;
+            while ((sb64_cols >> max_log2) >= MIN_TILE_WIDTH_B64)
+            {
+                max_log2 += 1;
+            }
+            return { OK, static_cast<uint8_t>(max_log2 - 1) };
+        }
+
+        ERROR trailing_bits(BitReader &br)
+        {
+            while (br.is_aligned(1))
+            {
+                Result<bool> zero_bit_result = br.read_bool();
+                if (zero_bit_result.error)
+                {
+                    return zero_bit_result.error;
+                }
+
+                if (zero_bit_result.value)
+                {
+                    return ERROR_INVALID_PADDING;
+                }
+            }
+
+            return OK;
+        }
 
         static constexpr uint32_t u32_from_le_bytes(const uint8_t *bytes)
         {
