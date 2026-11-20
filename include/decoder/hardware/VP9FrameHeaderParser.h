@@ -25,7 +25,7 @@
  */
 
 /*
- *    This file was ported from vp9-parser (Rust) by Nils Hasenbanck.
+ *    This file was ported by Joyless from vp9-parser (Rust) by Nils Hasenbanck.
  *
  *    Link:
  *    https://github.com/hasenbanck/vp9-parser/blob/master/src/lib.rs
@@ -62,7 +62,6 @@
 #define VP9_FRAME_HEADER_PARSER_H
 
 #include <stdint.h>
-#include <map>
 #include <vector>
 
 class VP9FrameHeaderParser
@@ -124,25 +123,8 @@ class VP9FrameHeaderParser
 
         BitReader(Slice<uint8_t> slice)
         {
-            data = slice.ptr;
-            size_in_bits = slice.len * 8;
-        }
-
-        template <typename T>
-        Result<T> read_unsigned(uint8_t count)
-        {
-            if (count > (sizeof(T) * 8) || count > get_remaining_bits())
-            {
-                return { ERROR_BIT_READER };
-            }
-
-            Result<uint64_t> result = read_u64(count);
-            if (result.error)
-            {
-                return { result.error };
-            }
-
-            return { OK, static_cast<T>(result.value) };
+            this->data = slice.ptr;
+            this->size_in_bits = slice.len * 8;
         }
 
         Result<uint64_t> read_u64(uint8_t count)
@@ -176,9 +158,72 @@ class VP9FrameHeaderParser
             return { OK, result.value != 0 };
         }
 
+        Result<int8_t> read_inverse_i8(uint8_t count)
+        {
+            return read_inverse_signed<int8_t, uint8_t>(count);
+        }
+
+        Result<int16_t> read_inverse_i16(uint8_t count)
+        {
+            return read_inverse_signed<int16_t, uint16_t>(count);
+        }
+
         size_t get_remaining_bits() const
         {
-            return size_in_bits - position_in_bits;
+            return this->size_in_bits - this->position_in_bits;
+        }
+
+    private:
+        template <typename T>
+        Result<T> read_unsigned(uint8_t count)
+        {
+            if (count > (sizeof(T) * 8) || count > get_remaining_bits())
+            {
+                return { ERROR_BIT_READER };
+            }
+
+            T value = 0;
+
+            for (uint8_t i = 0; i < count; ++i)
+            {
+                uint8_t byte = data[this->position_in_bits / 8];
+                uint8_t bit = (byte >> (this->position_in_bits % 8)) & 1;
+
+                value |= static_cast<T>(bit) << i;
+
+                ++position_in_bits;
+            }
+
+            return { OK, value };
+        }
+
+        template <typename T, typename U>
+        Result<T> read_inverse_signed(uint8_t count)
+        {
+            // The sign bit is at the start and not the end (even though it's BE).
+
+            Result<U> result = read_unsigned<U>(count);
+            if (result.error)
+            {
+                return { result.error };
+            }
+            T value = static_cast<T>(result.value);
+
+            Result<bool> negative_result = read_bool();
+            if (negative_result.error)
+            {
+                return { negative_result.error };
+            }
+            bool negative = negative_result.value;
+
+            if (negative)
+            {
+                return { OK, static_cast<T>(-value) };
+            }
+            else
+            {
+                return { OK, value };
+            }
         }
     };
 
@@ -224,7 +269,7 @@ class VP9FrameHeaderParser
         PROFILE_3,
     };
 
-    static PROFILE int_to_profile(uint8_t value)
+    static PROFILE u8_to_profile(uint8_t value)
     {
         switch (value)
         {
@@ -235,7 +280,7 @@ class VP9FrameHeaderParser
             default: return PROFILE_UNKNOWN;
         }
     }
-    static uint8_t profile_to_int(PROFILE value)
+    static uint8_t profile_to_u8(PROFILE value)
     {
         switch (value)
         {
@@ -275,7 +320,7 @@ class VP9FrameHeaderParser
         METADATA_SUBSAMPLING_YUV_444,
     };
 
-    static METADATA_SUBSAMPLING int_to_metadata_subsampling(uint8_t value)
+    static METADATA_SUBSAMPLING u8_to_metadata_subsampling(uint8_t value)
     {
         switch (value)
         {
@@ -313,7 +358,7 @@ class VP9FrameHeaderParser
         COLOR_SPACE_RGB,
     };
 
-    static COLOR_SPACE int_to_color_space(uint8_t value)
+    static COLOR_SPACE u8_to_color_space(uint8_t value)
     {
         switch (value)
         {
@@ -349,7 +394,7 @@ class VP9FrameHeaderParser
         COLOR_DEPTH_12,
     };
 
-    static COLOR_DEPTH int_to_color_depth(uint8_t value)
+    static COLOR_DEPTH u8_to_color_depth(uint8_t value)
     {
         switch (value)
         {
@@ -374,7 +419,7 @@ class VP9FrameHeaderParser
         COLOR_RANGE_FULL_SWING,
     };
 
-    static COLOR_RANGE int_to_color_range(bool value)
+    static COLOR_RANGE bool_to_color_range(bool value)
     {
         switch (value)
         {
@@ -411,7 +456,7 @@ class VP9FrameHeaderParser
         FRAME_TYPE_NON_KEY_FRAME,
     };
 
-    static FRAME_TYPE int_to_frame_type(bool value)
+    static FRAME_TYPE bool_to_frame_type(bool value)
     {
         switch (value)
         {
@@ -437,7 +482,7 @@ class VP9FrameHeaderParser
         RESET_FRAME_CONTEXT_FULL_RESET,
     };
 
-    static RESET_FRAME_CONTEXT int_to_reset_frame_context(uint8_t value)
+    static RESET_FRAME_CONTEXT u8_to_reset_frame_context(uint8_t value)
     {
         switch (value)
         {
@@ -489,7 +534,7 @@ class VP9FrameHeaderParser
         LEVEL_6_2,
     };
 
-    static LEVEL int_to_level(uint8_t value)
+    static LEVEL u8_to_level(uint8_t value)
     {
         switch (value)
         {
@@ -560,19 +605,19 @@ class VP9FrameHeaderParser
                 {
                     case 1:
                         has_profile = true;
-                        metadata.profile = int_to_profile(value);
+                        metadata.profile = u8_to_profile(value);
                         break;
                     case 2:
                         has_level = true;
-                        metadata.level = int_to_level(value);
+                        metadata.level = u8_to_level(value);
                         break;
                     case 3:
                         has_color_depth = true;
-                        metadata.color_depth = int_to_color_depth(value);
+                        metadata.color_depth = u8_to_color_depth(value);
                         break;
                     case 4:
                         has_chroma_subsampling = true;
-                        metadata.chroma_subsampling = int_to_metadata_subsampling(value);
+                        metadata.chroma_subsampling = u8_to_metadata_subsampling(value);
                         break;
                 }
             }
@@ -1001,7 +1046,7 @@ class VP9FrameHeaderParser
                         default:
                         {
                             // Odd, but also a valid bitstream configuration.
-                            for (size_t frame_index = 0; frame_index < frame_count; frame_index++)
+                            for (size_t frame_index = 0; frame_index < frame_count; ++frame_index)
                             {
                                 Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, frame_index);
                                 if (frame_size.error)
@@ -1092,7 +1137,7 @@ class VP9FrameHeaderParser
             {
                 return { profile_high_bit.error };
             }
-            this->profile = int_to_profile((profile_high_bit.value << 1) + profile_low_bit.value);
+            this->profile = u8_to_profile((profile_high_bit.value << 1) + profile_low_bit.value);
             if (this->profile == PROFILE_3)
             {
                 Result<uint8_t> _reserved_zero = br.read_u8(1);
@@ -1135,7 +1180,7 @@ class VP9FrameHeaderParser
             {
                 return { frame_type_bool.error };
             }
-            this->frame_type = int_to_frame_type(frame_type_bool.value);
+            this->frame_type = bool_to_frame_type(frame_type_bool.value);
 
             Result<bool> show_frame_result = br.read_bool();
             if (show_frame_result.error)
@@ -1198,7 +1243,7 @@ class VP9FrameHeaderParser
                     {
                         return { reset_frame_context_result.error };
                     }
-                    this->reset_frame_context = int_to_reset_frame_context(reset_frame_context_result.value);
+                    this->reset_frame_context = u8_to_reset_frame_context(reset_frame_context_result.value);
                 }
                 else
                 {
@@ -1249,7 +1294,7 @@ class VP9FrameHeaderParser
                         return { refresh_frame_flags_result.error };
                     }
                     this->refresh_frame_flags = refresh_frame_flags_result.value;
-                    for (size_t i = 0; i < 3; i++)
+                    for (size_t i = 0; i < 3; ++i)
                     {
                         Result<uint8_t> ref_frame_indices_result = br.read_u8(3);
                         if (ref_frame_indices_result.error)
@@ -1377,39 +1422,424 @@ class VP9FrameHeaderParser
             return { OK, frame };
         }
 
-        void refresh_ref_frames();
+        // Implements spec "8.10 Reference frame update process".
+        void refresh_ref_frames() {
+            uint8_t flags = this->refresh_frame_flags;
+            uint16_t new_width = this->width;
+            uint16_t new_height = this->height;
 
-        ERROR frame_sync_code(BitReader &bit_reader);
+            for (size_t index = 0; index < 8; ++index)
+            {
+                if (((flags >> index) & 1) == 1)
+                {
+                    ref_frame_sizes[index] = { new_width, new_height };
+                }
+            }
+        }
 
-        ERROR color_config(BitReader &bit_reader);
+        ERROR frame_sync_code(BitReader &br)
+        {
+            Result<uint8_t> frame_sync_byte_0 = br.read_u8(8);
+            if (frame_sync_byte_0.error)
+            {
+                return frame_sync_byte_0.error;
+            }
+            Result<uint8_t> frame_sync_byte_1 = br.read_u8(8);
+            if (frame_sync_byte_1.error)
+            {
+                return frame_sync_byte_1.error;
+            }
+            Result<uint8_t> frame_sync_byte_2 = br.read_u8(8);
+            if (frame_sync_byte_2.error)
+            {
+                return frame_sync_byte_2.error;
+            }
 
-        ERROR frame_size(BitReader &bit_reader);
+            if (frame_sync_byte_0.value != 0x49 && frame_sync_byte_1.value != 0x83 && frame_sync_byte_2.value != 0x42)
+            {
+                return ERROR_INVALID_SYNC_BYTE;
+            }
 
-        ERROR render_size(BitReader &bit_reader);
+            return OK;
+        }
 
-        ERROR frame_size_with_refs(BitReader &bit_reader);
+        ERROR color_config(BitReader &br)
+        {
+            if (this->profile >= PROFILE_2)
+            {
+                Result<bool> ten_or_twelve_bit = br.read_bool();
+                if (ten_or_twelve_bit.error)
+                {
+                    return ten_or_twelve_bit.error;
+                }
+                if (ten_or_twelve_bit.value)
+                {
+                    this->color_depth = COLOR_DEPTH_12;
+                }
+                else
+                {
+                    this->color_depth = COLOR_DEPTH_10;
+                }
+            }
+            else
+            {
+                this->color_depth = COLOR_DEPTH_8;
+            };
 
-        ERROR compute_image_size();
+            Result<uint8_t> color_space_result = br.read_u8(3);
+            if (color_space_result.error)
+            {
+                return color_space_result.error;
+            }
+            this->color_space = u8_to_color_space(color_space_result.value);
 
-        ERROR read_interpolation_filter(BitReader &bit_reader);
+            if (this->color_space == COLOR_SPACE_RGB)
+            {
+                this->color_range = COLOR_RANGE_FULL_SWING;
+                if (this->profile == PROFILE_1 || this->profile == PROFILE_3)
+                {
+                    this->subsampling_x = false;
+                    this->subsampling_y = false;
+                    Result<uint8_t> reserved_zero = br.read_u8(1);
+                    if (reserved_zero.error)
+                    {
+                        return reserved_zero.error;
+                    }
+                }
+            } else {
+                Result<bool> color_range_result = br.read_bool();
+                if (color_range_result.error)
+                {
+                    return color_range_result.error;
+                }
+                this->color_range = bool_to_color_range(color_range_result.value);
+                if (this->profile == PROFILE_1 || this->profile == PROFILE_3)
+                {
+                    Result<bool> subsampling_x_result = br.read_bool();
+                    if (subsampling_x_result.error)
+                    {
+                        return subsampling_x_result.error;
+                    }
+                    this->subsampling_x = subsampling_x_result.value;
+                    Result<bool> subsampling_y_result = br.read_bool();
+                    if (subsampling_y_result.error)
+                    {
+                        return subsampling_y_result.error;
+                    }
+                    this->subsampling_y = subsampling_y_result.value;
+                    Result<uint8_t> reserved_zero = br.read_u8(1);
+                    if (reserved_zero.error)
+                    {
+                        return reserved_zero.error;
+                    }
+                }
+                else
+                {
+                    this->subsampling_x = true;
+                    this->subsampling_y = true;
+                }
+            }
 
-        ERROR loop_filter_params(BitReader &bit_reader);
+            return OK;
+        }
 
-        ERROR quantization_params(BitReader &bit_reader);
+        ERROR frame_size(BitReader &br)
+        {
+            Result<uint16_t> frame_width_minus_1 = br.read_u16(16);
+            if (frame_width_minus_1.error)
+            {
+                return frame_width_minus_1.error;
+            }
+            Result<uint16_t> frame_height_minus_1 = br.read_u16(16);
+            if (frame_height_minus_1.error)
+            {
+                return frame_height_minus_1.error;
+            }
+            this->width = frame_width_minus_1.value + 1;
+            this->height = frame_height_minus_1.value + 1;
 
-        ERROR read_delta_q(BitReader &bit_reader);
+            compute_image_size();
 
-        ERROR segmentation_params(BitReader &bit_reader);
+            return OK;
+        }
 
-        ERROR read_prob(BitReader &bit_reader);
+        ERROR render_size(BitReader &br)
+        {
+            Result<bool> render_and_frame_size_different = br.read_bool();
+            if (render_and_frame_size_different.error)
+            {
+                return render_and_frame_size_different.error;
+            }
+            if (render_and_frame_size_different.value)
+            {
+                Result<uint16_t> render_width_minus_1 = br.read_u16(16);
+                if (render_width_minus_1.error)
+                {
+                    return render_width_minus_1.error;
+                }
+                Result<uint16_t> render_height_minus_1 = br.read_u16(16);
+                if (render_height_minus_1.error)
+                {
+                    return render_height_minus_1.error;
+                }
+                this->render_width = render_width_minus_1.value + 1;
+                this->render_height = render_height_minus_1.value + 1;
+            }
+            else
+            {
+                this->render_width = this->width;
+                this->render_height = this->height;
+            }
 
-        ERROR tile_info(BitReader &bit_reader);
+            return OK;
+        }
 
-        ERROR calc_min_log2_tile_cols(BitReader &bit_reader);
+        ERROR frame_size_with_refs(BitReader &br)
+        {
+            bool found_ref = false;
+            for (uint8_t i = 0; i < 3; ++i)
+            {
+                Result<bool> found_ref_result = br.read_bool();
+                if (found_ref_result.error)
+                {
+                    return found_ref_result.error;
+                }
+                found_ref = found_ref_result.value;
 
-        ERROR calc_max_log2_tile_cols(BitReader &bit_reader);
+                if (found_ref)
+                {
+                    uint8_t ref_frame_index = this->ref_frame_indices[i];
+                    if (ref_frame_index >= 8)
+                    {
+                        return ERROR_INVALID_REF_FRAME_INDEX;
+                    }
+                    std::pair<uint16_t, uint16_t> sizes = this->ref_frame_sizes[ref_frame_index];
 
-        ERROR trailing_bits(BitReader &bit_reader);
+                    this->width = sizes.first;
+                    this->height = sizes.second;
+                    break;
+                }
+            }
+
+            if (!found_ref)
+            {
+                ERROR frame_size_error = frame_size(br);
+                if (frame_size_error)
+                {
+                    return frame_size_error;
+                }
+            }
+            else
+            {
+                compute_image_size();
+            }
+
+            ERROR render_size_error = render_size(br);
+            if (render_size_error)
+            {
+                return render_size_error;
+            }
+
+            return OK;
+        }
+
+        void compute_image_size()
+        {
+            this->mi_cols = (this->width + 7) >> 3;
+            this->mi_rows = (this->height + 7) >> 3;
+        }
+
+        ERROR read_interpolation_filter(BitReader &br)
+        {
+            Result<bool> is_filter_switchable = br.read_bool();
+            if (is_filter_switchable.error)
+            {
+                return is_filter_switchable.error;
+            }
+
+            if (is_filter_switchable.value)
+            {
+                this->interpolation_filter = INTERPOLATION_FILTER_SWITCHABLE;
+            }
+            else
+            {
+                Result<uint8_t> raw_interpolation_filter = br.read_u8(2);
+                if (raw_interpolation_filter.error)
+                {
+                    return raw_interpolation_filter.error;
+                }
+                switch (raw_interpolation_filter.value)
+                {
+                    case 0:
+                        this->interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP_SMOOTH;
+                        break;
+                    case 1:
+                        this->interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP;
+                        break;
+                    case 2:
+                        this->interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP_SHARP;
+                        break;
+                    case 3:
+                        this->interpolation_filter = INTERPOLATION_FILTER_BILINEAR;
+                        break;
+                    default:
+                        this->interpolation_filter = INTERPOLATION_FILTER_UNKNOWN;
+                        break;
+                }
+            }
+
+            return OK;
+        }
+
+        ERROR loop_filter_params(BitReader &br)
+        {
+            Result<uint8_t> loop_filter_level_result = br.read_u8(6);
+            if (loop_filter_level_result.error)
+            {
+                return loop_filter_level_result.error;
+            }
+            this->loop_filter_level = loop_filter_level_result.value;
+
+            Result<uint8_t> loop_filter_sharpness_result = br.read_u8(3);
+            if (loop_filter_sharpness_result.error)
+            {
+                return loop_filter_sharpness_result.error;
+            }
+            this->loop_filter_sharpness = loop_filter_sharpness_result.value;
+
+            Result<bool> loop_filter_delta_enabled_result = br.read_bool();
+            if (loop_filter_delta_enabled_result.error)
+            {
+                return loop_filter_delta_enabled_result.error;
+            }
+            this->loop_filter_delta_enabled = loop_filter_delta_enabled_result.value;
+
+            if (this->loop_filter_delta_enabled)
+            {
+                Result<bool> loop_filter_delta_update_result = br.read_bool();
+                if (loop_filter_delta_update_result.error)
+                {
+                    return loop_filter_delta_update_result.error;
+                }
+
+                if (loop_filter_delta_update_result.value)
+                {
+                    for (uint8_t i = 0; i < 4; ++i)
+                    {
+                        Result<bool> update_ref_delta_result = br.read_bool();
+                        if (update_ref_delta_result.error)
+                        {
+                            return update_ref_delta_result.error;
+                        }
+
+                        if (update_ref_delta_result.value)
+                        {
+                            Result<int8_t> loop_filter_ref_delta_result = br.read_inverse_i8(6);
+                            if (loop_filter_ref_delta_result.error)
+                            {
+                                return loop_filter_ref_delta_result.error;
+                            }
+                            loop_filter_ref_deltas[i] = loop_filter_ref_delta_result.value;
+                        }
+                    }
+
+                    for (uint8_t i = 0; i < 2; ++i)
+                    {
+                        Result<bool> update_mode_delta_result = br.read_bool();
+                        if (update_mode_delta_result.error)
+                        {
+                            return update_mode_delta_result.error;
+                        }
+
+                        if (update_mode_delta_result.value)
+                        {
+                            Result<int8_t> loop_filter_mode_delta_result = br.read_inverse_i8(6);
+                            if (loop_filter_mode_delta_result.error)
+                            {
+                                return loop_filter_mode_delta_result.error;
+                            }
+                            loop_filter_mode_deltas[i] = loop_filter_mode_delta_result.value;
+                        }
+                    }
+                }
+            }
+
+            return OK;
+        }
+
+        ERROR quantization_params(BitReader &br)
+        {
+            Result<uint8_t> base_q_idx_result = br.read_u8(8);
+            if (base_q_idx_result.error)
+            {
+                return base_q_idx_result.error;
+            }
+            this->base_q_idx = base_q_idx_result.value;
+
+            Result<int32_t> delta_q_y_dc_result = read_delta_q(br);
+            if (delta_q_y_dc_result.error)
+            {
+                return delta_q_y_dc_result.error;
+            }
+            this->delta_q_y_dc = delta_q_y_dc_result.value;
+
+            Result<int32_t> delta_q_uv_dc_result = read_delta_q(br);
+            if (delta_q_uv_dc_result.error)
+            {
+                return delta_q_uv_dc_result.error;
+            }
+            this->delta_q_uv_dc = delta_q_uv_dc_result.value;
+
+            Result<int32_t> delta_q_uv_ac_result = read_delta_q(br);
+            if (delta_q_uv_ac_result.error)
+            {
+                return delta_q_uv_ac_result.error;
+            }
+            this->delta_q_uv_ac = delta_q_uv_ac_result.value;
+
+            this->lossless = (this->base_q_idx == 0)
+                && (this->delta_q_y_dc == 0)
+                && (this->delta_q_uv_dc == 0)
+                && (this->delta_q_uv_ac == 0);
+
+            return OK;
+        }
+
+        Result<int32_t> read_delta_q(BitReader &br)
+        {
+            Result<bool> delta_coded_result = br.read_bool();
+            if (delta_coded_result.error)
+            {
+                return { delta_coded_result.error };
+            }
+
+            if (delta_coded_result.value)
+            {
+                Result<int8_t> delta_q_result = br.read_inverse_i8(4);
+                if (delta_q_result.error)
+                {
+                    return { delta_q_result.error };
+                }
+
+                return { OK, delta_q_result.value };
+            }
+            else
+            {
+                return { OK, 0 };
+            }
+        }
+
+        ERROR segmentation_params(BitReader &br);
+
+        ERROR read_prob(BitReader &br);
+
+        ERROR tile_info(BitReader &br);
+
+        ERROR calc_min_log2_tile_cols(BitReader &br);
+
+        ERROR calc_max_log2_tile_cols(BitReader &br);
+
+        ERROR trailing_bits(BitReader &br);
 
         static constexpr uint32_t u32_from_le_bytes(const uint8_t *bytes)
         {
