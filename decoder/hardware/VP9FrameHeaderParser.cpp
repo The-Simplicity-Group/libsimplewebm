@@ -153,12 +153,12 @@ Result<T> BitReader::readInverseSigned(uint8_t count)
 {
     // The sign bit is at the start and not the end (even though it's BE).
 
-    Result<U> result = readUnsigned<U>(count);
-    if (result.error)
+    Result<U> valueResult = readUnsigned<U>(count);
+    if (valueResult.error)
     {
-        return { result.error };
+        return { valueResult.error };
     }
-    T value = static_cast<T>(result.value);
+    T value = static_cast<T>(valueResult.value);
 
     Result<bool> negativeResult = readBool();
     if (negativeResult.error)
@@ -564,10 +564,10 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                     }
                     std::vector<uint8_t> leftOver = std::vector<uint8_t>(packet.begin() + firstFrameSizeResult.value, packet.end());
                     packet.resize(firstFrameSizeResult.value);
-                    Result<Frame> firstFrame = parseFrame(packet);
-                    if (firstFrame.error)
+                    Result<Frame> firstFrameResult = parseFrame(packet);
+                    if (firstFrameResult.error)
                     {
-                        return { firstFrame.error };
+                        return { firstFrameResult.error };
                     }
 
                     Result<size_t> secondFrameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 1);
@@ -576,14 +576,14 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                         return { secondFrameSizeResult.error };
                     }
                     leftOver.resize(secondFrameSizeResult.value);
-                    Result<Frame> secondFrame = parseFrame(leftOver);
-                    if (secondFrame.error)
+                    Result<Frame> secondFrameResult = parseFrame(leftOver);
+                    if (secondFrameResult.error)
                     {
-                        return { secondFrame.error };
+                        return { secondFrameResult.error };
                     }
 
-                    frames.push_back(firstFrame.value);
-                    frames.push_back(secondFrame.value);
+                    frames.push_back(firstFrameResult.value);
+                    frames.push_back(secondFrameResult.value);
                     break;
                 }
                 default:
@@ -617,12 +617,12 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
     }
 
     // Normal frame.
-    Result<Frame> frame = parseFrame(packet);
-    if (frame.error)
+    Result<Frame> frameResult = parseFrame(packet);
+    if (frameResult.error)
     {
-        return { frame.error };
+        return { frameResult.error };
     }
-    return { OK, { frame.value } };
+    return { OK, { frameResult.value } };
 }
 
 Result<size_t> VP9Parser::readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index)
@@ -660,33 +660,33 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
 {
     BitReader br = BitReader({ data.data(), data.size() });
 
-    Result<uint8_t> frameMarker = br.readU8(2);
-    if (frameMarker.error)
+    Result<uint8_t> frameMarkerResult = br.readU8(2);
+    if (frameMarkerResult.error)
     {
-        return { frameMarker.error };
+        return { frameMarkerResult.error };
     }
-    if (frameMarker.value != 2)
+    if (frameMarkerResult.value != 2)
     {
         return { ERROR_INVALID_FRAME_MARKER };
     }
 
-    Result<uint8_t> profileLowBit = br.readU8(1);
-    if (profileLowBit.error)
+    Result<uint8_t> profileLowBitResult = br.readU8(1);
+    if (profileLowBitResult.error)
     {
-        return { profileLowBit.error };
+        return { profileLowBitResult.error };
     }
-    Result<uint8_t> profileHighBit = br.readU8(1);
-    if (profileHighBit.error)
+    Result<uint8_t> profileHighBitResult = br.readU8(1);
+    if (profileHighBitResult.error)
     {
-        return { profileHighBit.error };
+        return { profileHighBitResult.error };
     }
-    this->profile = u8ToProfile((profileHighBit.value << 1) + profileLowBit.value);
+    this->profile = u8ToProfile((profileHighBitResult.value << 1) + profileLowBitResult.value);
     if (this->profile == PROFILE_3)
     {
-        Result<uint8_t> ReservedZero = br.readU8(1);
-        if (ReservedZero.error)
+        Result<uint8_t> reservedZeroResult = br.readU8(1);
+        if (reservedZeroResult.error)
         {
-            return { ReservedZero.error };
+            return { reservedZeroResult.error };
         }
     }
 
@@ -718,12 +718,12 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
 
     this->lastFrameType = this->frameType;
 
-    Result<bool> frameTypeBool = br.readBool();
-    if (frameTypeBool.error)
+    Result<bool> frameTypeResult = br.readBool();
+    if (frameTypeResult.error)
     {
-        return { frameTypeBool.error };
+        return { frameTypeResult.error };
     }
-    this->frameType = boolToFrameType(frameTypeBool.value);
+    this->frameType = boolToFrameType(frameTypeResult.value);
 
     Result<bool> showFrameResult = br.readBool();
     if (showFrameResult.error)
@@ -986,23 +986,23 @@ void VP9Parser::refreshRefFrames()
 
 ERROR VP9Parser::frameSyncCode(BitReader &br)
 {
-    Result<uint8_t> frameSyncByte_0 = br.readU8(8);
-    if (frameSyncByte_0.error)
+    Result<uint8_t> frameSyncByte0Result = br.readU8(8);
+    if (frameSyncByte0Result.error)
     {
-        return frameSyncByte_0.error;
+        return frameSyncByte0Result.error;
     }
-    Result<uint8_t> frameSyncByte_1 = br.readU8(8);
-    if (frameSyncByte_1.error)
+    Result<uint8_t> frameSyncByte1Result = br.readU8(8);
+    if (frameSyncByte1Result.error)
     {
-        return frameSyncByte_1.error;
+        return frameSyncByte1Result.error;
     }
-    Result<uint8_t> frameSyncByte_2 = br.readU8(8);
-    if (frameSyncByte_2.error)
+    Result<uint8_t> frameSyncByte2Result = br.readU8(8);
+    if (frameSyncByte2Result.error)
     {
-        return frameSyncByte_2.error;
+        return frameSyncByte2Result.error;
     }
 
-    if (frameSyncByte_0.value != 0x49 && frameSyncByte_1.value != 0x83 && frameSyncByte_2.value != 0x42)
+    if (frameSyncByte0Result.value != 0x49 && frameSyncByte1Result.value != 0x83 && frameSyncByte2Result.value != 0x42)
     {
         return ERROR_INVALID_SYNC_BYTE;
     }
@@ -1014,12 +1014,12 @@ ERROR VP9Parser::colorConfig(BitReader &br)
 {
     if (this->profile >= PROFILE_2)
     {
-        Result<bool> tenOrTwelveBit = br.readBool();
-        if (tenOrTwelveBit.error)
+        Result<bool> tenOrTwelveBitResult = br.readBool();
+        if (tenOrTwelveBitResult.error)
         {
-            return tenOrTwelveBit.error;
+            return tenOrTwelveBitResult.error;
         }
-        if (tenOrTwelveBit.value)
+        if (tenOrTwelveBitResult.value)
         {
             this->colorDepth = COLOR_DEPTH_12;
         }
@@ -1047,10 +1047,10 @@ ERROR VP9Parser::colorConfig(BitReader &br)
         {
             this->subsamplingX = false;
             this->subsamplingY = false;
-            Result<uint8_t> reservedZero = br.readU8(1);
-            if (reservedZero.error)
+            Result<uint8_t> reservedZeroResult = br.readU8(1);
+            if (reservedZeroResult.error)
             {
-                return reservedZero.error;
+                return reservedZeroResult.error;
             }
         }
     }
@@ -1076,10 +1076,10 @@ ERROR VP9Parser::colorConfig(BitReader &br)
                 return subsamplingYResult.error;
             }
             this->subsamplingY = subsamplingYResult.value;
-            Result<uint8_t> reservedZero = br.readU8(1);
-            if (reservedZero.error)
+            Result<uint8_t> reservedZeroResult = br.readU8(1);
+            if (reservedZeroResult.error)
             {
-                return reservedZero.error;
+                return reservedZeroResult.error;
             }
         }
         else
@@ -1094,18 +1094,18 @@ ERROR VP9Parser::colorConfig(BitReader &br)
 
 ERROR VP9Parser::frameSize(BitReader &br)
 {
-    Result<uint16_t> frameWidthMinus_1 = br.readU16(16);
-    if (frameWidthMinus_1.error)
+    Result<uint16_t> frameWidthMinus1Result = br.readU16(16);
+    if (frameWidthMinus1Result.error)
     {
-        return frameWidthMinus_1.error;
+        return frameWidthMinus1Result.error;
     }
-    Result<uint16_t> frameHeightMinus_1 = br.readU16(16);
-    if (frameHeightMinus_1.error)
+    Result<uint16_t> frameHeightMinus1Result = br.readU16(16);
+    if (frameHeightMinus1Result.error)
     {
-        return frameHeightMinus_1.error;
+        return frameHeightMinus1Result.error;
     }
-    this->width = frameWidthMinus_1.value + 1;
-    this->height = frameHeightMinus_1.value + 1;
+    this->width = frameWidthMinus1Result.value + 1;
+    this->height = frameHeightMinus1Result.value + 1;
 
     computeImageSize();
 
@@ -1114,25 +1114,25 @@ ERROR VP9Parser::frameSize(BitReader &br)
 
 ERROR VP9Parser::renderSize(BitReader &br)
 {
-    Result<bool> renderAndFrameSizeDifferent = br.readBool();
-    if (renderAndFrameSizeDifferent.error)
+    Result<bool> renderAndFrameSizeDifferentResult = br.readBool();
+    if (renderAndFrameSizeDifferentResult.error)
     {
-        return renderAndFrameSizeDifferent.error;
+        return renderAndFrameSizeDifferentResult.error;
     }
-    if (renderAndFrameSizeDifferent.value)
+    if (renderAndFrameSizeDifferentResult.value)
     {
-        Result<uint16_t> renderWidthMinus_1 = br.readU16(16);
-        if (renderWidthMinus_1.error)
+        Result<uint16_t> renderWidthMinus1Result = br.readU16(16);
+        if (renderWidthMinus1Result.error)
         {
-            return renderWidthMinus_1.error;
+            return renderWidthMinus1Result.error;
         }
-        Result<uint16_t> renderHeightMinus_1 = br.readU16(16);
-        if (renderHeightMinus_1.error)
+        Result<uint16_t> renderHeightMinus1Result = br.readU16(16);
+        if (renderHeightMinus1Result.error)
         {
-            return renderHeightMinus_1.error;
+            return renderHeightMinus1Result.error;
         }
-        this->renderWidth = renderWidthMinus_1.value + 1;
-        this->renderHeight = renderHeightMinus_1.value + 1;
+        this->renderWidth = renderWidthMinus1Result.value + 1;
+        this->renderHeight = renderHeightMinus1Result.value + 1;
     }
     else
     {
@@ -1200,24 +1200,24 @@ void VP9Parser::computeImageSize()
 
 ERROR VP9Parser::readInterpolationFilter(BitReader &br)
 {
-    Result<bool> isFilterSwitchable = br.readBool();
-    if (isFilterSwitchable.error)
+    Result<bool> isFilterSwitchableResult = br.readBool();
+    if (isFilterSwitchableResult.error)
     {
-        return isFilterSwitchable.error;
+        return isFilterSwitchableResult.error;
     }
 
-    if (isFilterSwitchable.value)
+    if (isFilterSwitchableResult.value)
     {
         this->interpolationFilter = INTERPOLATION_FILTER_SWITCHABLE;
     }
     else
     {
-        Result<uint8_t> rawInterpolationFilter = br.readU8(2);
-        if (rawInterpolationFilter.error)
+        Result<uint8_t> rawInterpolationFilterResult = br.readU8(2);
+        if (rawInterpolationFilterResult.error)
         {
-            return rawInterpolationFilter.error;
+            return rawInterpolationFilterResult.error;
         }
-        switch (rawInterpolationFilter.value)
+        switch (rawInterpolationFilterResult.value)
         {
             case 0:
                 this->interpolationFilter = INTERPOLATION_FILTER_EIGHTTAP_SMOOTH;
