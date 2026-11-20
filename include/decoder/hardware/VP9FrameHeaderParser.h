@@ -64,7 +64,7 @@
 #include <stdint.h>
 #include <vector>
 
-class VP9FrameHeaderParser
+namespace VP9FrameHeaderParser
 {
     /// Contains all the possible errors in VP9FrameHeaderParser.
     enum ERROR : uint8_t
@@ -84,15 +84,15 @@ class VP9FrameHeaderParser
     };
 
     /// Equivalent for Rust's Option type.
-    template<typename T>
+    template <typename T>
     struct Option
     {
-        bool has_value = false;
+        bool hasValue = false;
         T value = {};
     };
 
     /// Equivalent for Rust's slice type.
-    template<typename T>
+    template <typename T>
     struct Slice
     {
         const T *ptr = nullptr;
@@ -100,7 +100,7 @@ class VP9FrameHeaderParser
     };
 
     /// Equivalent for Rust's mutable slice type.
-    template<typename T>
+    template <typename T>
     struct MutableSlice
     {
         T *ptr = nullptr;
@@ -108,7 +108,7 @@ class VP9FrameHeaderParser
     };
 
     /// Equivalent for Rust's Result type.
-    template<typename T>
+    template <typename T>
     struct Result
     {
         ERROR error = OK;
@@ -119,132 +119,31 @@ class VP9FrameHeaderParser
     struct BitReader
     {
         const uint8_t *data = nullptr;
-        size_t size_in_bits = 0;
-        size_t position_in_bits = 0;
+        size_t sizeInBits = 0;
+        size_t positionInBits = 0;
 
-        BitReader(Slice<uint8_t> slice)
-        {
-            this->data = slice.ptr;
-            this->size_in_bits = slice.len * 8;
-        }
-
-        Result<uint64_t> read_u64(uint8_t count)
-        {
-            return read_unsigned<uint64_t>(count);
-        }
-
-        Result<uint32_t> read_u32(uint8_t count)
-        {
-            return read_unsigned<uint32_t>(count);
-        }
-
-        Result<uint16_t> read_u16(uint8_t count)
-        {
-            return read_unsigned<uint16_t>(count);
-        }
-
-        Result<uint8_t> read_u8(uint8_t count)
-        {
-            return read_unsigned<uint8_t>(count);
-        }
-
-        Result<bool> read_bool()
-        {
-            Result<uint8_t> result = read_u8(1);
-            if (result.error)
-            {
-                return { result.error };
-            }
-
-            return { OK, result.value != 0 };
-        }
-
-        Result<int8_t> read_inverse_i8(uint8_t count)
-        {
-            return read_inverse_signed<int8_t, uint8_t>(count);
-        }
-
-        Result<int16_t> read_inverse_i16(uint8_t count)
-        {
-            return read_inverse_signed<int16_t, uint16_t>(count);
-        }
-
-        size_t get_remaining_bits() const
-        {
-            return this->size_in_bits - this->position_in_bits;
-        }
-
-        bool is_aligned(uint32_t alignment_bytes) const
-        {
-            return this->position_in_bits % (static_cast<uint64_t>(alignment_bytes) * 8) == 0;
-        }
+        BitReader(Slice<uint8_t> slice);
+        Result<uint64_t> readU64(uint8_t count);
+        Result<uint32_t> readU32(uint8_t count);
+        Result<uint16_t> readU16(uint8_t count);
+        Result<uint8_t> readU8(uint8_t count);
+        Result<bool> readBool();
+        Result<int8_t> readInverseI8(uint8_t count);
+        Result<int16_t> readInverseI16(uint8_t count);
+        size_t getRemainingBits() const;
+        bool isAligned(uint32_t alignmentBytes) const;
 
     private:
-        template<typename T>
-        Result<T> read_unsigned(uint8_t count)
-        {
-            if (count > 64)
-            {
-                return { ERROR_BIT_READER };
-            }
-
-            if (count > get_remaining_bits())
-            {
-                return { ERROR_BIT_READER };
-            }
-
-            T value = 0;
-
-            for (uint8_t i = 0; i < count; ++i)
-            {
-                size_t byte_index = this->position_in_bits / 8;
-                uint8_t byte = this->data[byte_index];
-                T shift = 7 - (this->position_in_bits % 8);
-                T bit = static_cast<T>(byte >> shift) & 1;
-                value = (value << 1) | bit;
-
-                ++this->position_in_bits;
-            }
-
-            return { OK, value };
-        }
-
+        template <typename T>
+        Result<T> readUnsigned(uint8_t count);
         template <typename T, typename U>
-        Result<T> read_inverse_signed(uint8_t count)
-        {
-            // The sign bit is at the start and not the end (even though it's BE).
-
-            Result<U> result = read_unsigned<U>(count);
-            if (result.error)
-            {
-                return { result.error };
-            }
-            T value = static_cast<T>(result.value);
-
-            Result<bool> negative_result = read_bool();
-            if (negative_result.error)
-            {
-                return { negative_result.error };
-            }
-            bool negative = negative_result.value;
-
-            if (negative)
-            {
-                return { OK, static_cast<T>(-value) };
-            }
-            else
-            {
-                return { OK, value };
-            }
-        }
+        Result<T> readInverseSigned(uint8_t count);
     };
 
     /// The number of segments allowed in segmentation map.
     static constexpr uint8_t MAX_SEGMENTS = 8;
-
     /// The minimum width of a tile in units of super blocks.
     static constexpr uint8_t MIN_TILE_WIDTH_B64 = 4;
-
     /// The maximum width of a tile in units of super blocks.
     static constexpr uint8_t MAX_TILE_WIDTH_B64 = 64;
 
@@ -281,28 +180,7 @@ class VP9FrameHeaderParser
         PROFILE_3,
     };
 
-    static PROFILE u8_to_profile(uint8_t value)
-    {
-        switch (value)
-        {
-            case 0: return PROFILE_0;
-            case 1: return PROFILE_1;
-            case 2: return PROFILE_2;
-            case 3: return PROFILE_3;
-            default: return PROFILE_UNKNOWN;
-        }
-    }
-    static uint8_t profile_to_u8(PROFILE value)
-    {
-        switch (value)
-        {
-            case PROFILE_0: return 0;
-            case PROFILE_1: return 1;
-            case PROFILE_2: return 2;
-            case PROFILE_3: return 3;
-            default: return UINT8_MAX;
-        }
-    }
+    constexpr PROFILE u8ToProfile(uint8_t value);
 
     /// Chroma subsampling.
     enum SUBSAMPLING : uint8_t
@@ -332,22 +210,7 @@ class VP9FrameHeaderParser
         METADATA_SUBSAMPLING_YUV_444,
     };
 
-    static METADATA_SUBSAMPLING u8_to_metadata_subsampling(uint8_t value)
-    {
-        switch (value)
-        {
-            case 0:
-                return METADATA_SUBSAMPLING_YUV_420;
-            case 1:
-                return METADATA_SUBSAMPLING_YUV_420_COLOCATED;
-            case 2:
-                return METADATA_SUBSAMPLING_YUV_422;
-            case 3:
-                return METADATA_SUBSAMPLING_YUV_444;
-            default:
-                return METADATA_SUBSAMPLING_UNKNOWN;
-        }
-    }
+    constexpr METADATA_SUBSAMPLING u8ToMetadataSubsampling(uint8_t value);
 
     /// Color space.
     enum COLOR_SPACE : uint8_t
@@ -370,28 +233,7 @@ class VP9FrameHeaderParser
         COLOR_SPACE_RGB,
     };
 
-    static COLOR_SPACE u8_to_color_space(uint8_t value)
-    {
-        switch (value)
-        {
-            case 1:
-                return COLOR_SPACE_BT601;
-            case 2:
-                return COLOR_SPACE_BT709;
-            case 3:
-                return COLOR_SPACE_SMPTE170;
-            case 4:
-                return COLOR_SPACE_SMPTE240;
-            case 5:
-                return COLOR_SPACE_BT2020;
-            case 6:
-                return COLOR_SPACE_RESERVED;
-            case 7:
-                return COLOR_SPACE_RGB;
-            default:
-                return COLOR_SPACE_UNKNOWN;
-        }
-    }
+    constexpr COLOR_SPACE u8ToColorSpace(uint8_t value);
 
     /// Color depth.
     enum COLOR_DEPTH : uint8_t
@@ -406,20 +248,7 @@ class VP9FrameHeaderParser
         COLOR_DEPTH_12,
     };
 
-    static COLOR_DEPTH u8_to_color_depth(uint8_t value)
-    {
-        switch (value)
-        {
-            case 8:
-                return COLOR_DEPTH_8;
-            case 10:
-                return COLOR_DEPTH_10;
-            case 12:
-                return COLOR_DEPTH_12;
-            default:
-                return COLOR_DEPTH_UNKNOWN;
-        }
-    }
+    constexpr COLOR_DEPTH u8ToColorDepth(uint8_t value);
 
     /// Specifies the black level and range of the luma and chroma signals as specified in
     /// Rec. ITU-R BT.709-6 and Rec. ITU-R BT.2020-2.
@@ -431,16 +260,7 @@ class VP9FrameHeaderParser
         COLOR_RANGE_FULL_SWING,
     };
 
-    static COLOR_RANGE bool_to_color_range(bool value)
-    {
-        switch (value)
-        {
-            case false:
-                return COLOR_RANGE_STUDIO_SWING;
-            case true:
-                return COLOR_RANGE_FULL_SWING;
-        }
-    }
+    constexpr COLOR_RANGE boolToColorRange(bool value);
 
     /// Type of the interpolation filter.
     enum INTERPOLATION_FILTER : uint8_t
@@ -468,16 +288,7 @@ class VP9FrameHeaderParser
         FRAME_TYPE_NON_KEY_FRAME,
     };
 
-    static FRAME_TYPE bool_to_frame_type(bool value)
-    {
-        switch (value)
-        {
-            case false:
-                return FRAME_TYPE_KEY_FRAME;
-            case true:
-                return FRAME_TYPE_NON_KEY_FRAME;
-        }
-    }
+    constexpr FRAME_TYPE boolToFrameType(bool value);
 
     /// Defines if the frame context should be reset.
     enum RESET_FRAME_CONTEXT : uint8_t
@@ -494,22 +305,7 @@ class VP9FrameHeaderParser
         RESET_FRAME_CONTEXT_FULL_RESET,
     };
 
-    static RESET_FRAME_CONTEXT u8_to_reset_frame_context(uint8_t value)
-    {
-        switch (value)
-        {
-            case 0:
-                return RESET_FRAME_CONTEXT_NO_0;
-            case 1:
-                return RESET_FRAME_CONTEXT_NO_1;
-            case 2:
-                return RESET_FRAME_CONTEXT_SINGLE_RESET;
-            case 3:
-                return RESET_FRAME_CONTEXT_FULL_RESET;
-            default:
-                return RESET_FRAME_CONTEXT_UNKNOWN;
-        }
-    }
+    constexpr RESET_FRAME_CONTEXT u8ToResetFrameContext(uint8_t value);
 
     /// The codec level.
     enum LEVEL : uint8_t
@@ -546,101 +342,17 @@ class VP9FrameHeaderParser
         LEVEL_6_2,
     };
 
-    static LEVEL u8_to_level(uint8_t value)
-    {
-        switch (value)
-        {
-            case 10:
-                return LEVEL_1;
-            case 11:
-                return LEVEL_1_1;
-            case 20:
-                return LEVEL_2;
-            case 21:
-                return LEVEL_2_1;
-            case 30:
-                return LEVEL_3;
-            case 31:
-                return LEVEL_3_1;
-            case 40:
-                return LEVEL_4;
-            case 41:
-                return LEVEL_4_1;
-            case 50:
-                return LEVEL_5;
-            case 51:
-                return LEVEL_5_1;
-            case 52:
-                return LEVEL_5_2;
-            case 60:
-                return LEVEL_6;
-            case 61:
-                return LEVEL_6_1;
-            case 62:
-                return LEVEL_6_2;
-            default:
-                return LEVEL_UNKNOWN;
-        }
-    }
+    constexpr LEVEL u8ToLevel(uint8_t value);
 
     /// VP9 Codec Feature Metadata saved inside the `CodecPrivate` field of containers.
     struct Metadata {
         PROFILE profile;
         LEVEL level;
-        COLOR_DEPTH color_depth;
-        METADATA_SUBSAMPLING chroma_subsampling;
+        COLOR_DEPTH colorDepth;
+        METADATA_SUBSAMPLING chromaSubsampling;
 
         /// Creates the Vp9Metadata from the given `CodecPrivate` data.
-        static Result<Metadata> create(Slice<uint8_t> data)
-        {
-            Metadata metadata;
-
-            bool has_profile = false;
-            bool has_level = false;
-            bool has_color_depth = false;
-            bool has_chroma_subsampling = false;
-
-            int32_t pos = 0;
-
-            while (pos < data.len)
-            {
-                if (pos + 1 >= data.len)
-                {
-                    return { ERROR_INVALID_METADATA };
-                }
-
-                uint8_t id = data.ptr[pos];
-                uint8_t value = data.ptr[pos + 1];
-                pos += 2;
-
-                switch (id)
-                {
-                    case 1:
-                        has_profile = true;
-                        metadata.profile = u8_to_profile(value);
-                        break;
-                    case 2:
-                        has_level = true;
-                        metadata.level = u8_to_level(value);
-                        break;
-                    case 3:
-                        has_color_depth = true;
-                        metadata.color_depth = u8_to_color_depth(value);
-                        break;
-                    case 4:
-                        has_chroma_subsampling = true;
-                        metadata.chroma_subsampling = u8_to_metadata_subsampling(value);
-                        break;
-                }
-            }
-
-            if (!has_profile || !has_level || !has_color_depth || !has_chroma_subsampling)
-            {
-                return { ERROR_INVALID_METADATA };
-            }
-
-            return { OK, metadata };
-        }
+        static Result<Metadata> create(Slice<uint8_t> data);
     };
 
     struct VP9Parser;
@@ -650,475 +362,244 @@ class VP9FrameHeaderParser
         std::vector<uint8_t> data;
         /// The profile the frame is using.
         PROFILE profile;
-        /// Indicates that the frame indexed by `frame_to_show_map_idx` is to be displayed.
+        /// Indicates that the frame indexed by `frameToShowMapIdx` is to be displayed.
         /// The frame contains no actual frame data.
-        bool show_existing_frame;
-        /// Specifies the frame to be displayed. It is only available if `show_existing_frame` is true.
-        Option<uint8_t> frame_to_show_map_idx;
+        bool showExistingFrame;
+        /// Specifies the frame to be displayed. It is only available if `showExistingFrame` is true.
+        Option<uint8_t> frameToShowMapIdx;
         /// The frame type of the previous frame.
-        FRAME_TYPE last_frame_type;
+        FRAME_TYPE lastFrameType;
         /// The frame type of this frame.
-        FRAME_TYPE frame_type;
+        FRAME_TYPE frameType;
         /// Indicates that the frame is to be displayed.
-        bool show_frame;
+        bool showFrame;
         /// Indicates that error resilient mode is enabled.
         ///
         /// Error resilient mode allows the syntax of a frame to be decoded
         /// independently of previous frames.
-        bool error_resilient_mode;
+        bool errorResilientMode;
         /// Indicates that a frame is an `intra-only` frame.
         ///
         /// A key frame is different to an `intra-only` frame even though both only use
         /// intra prediction. The difference is that a key frame fully resets the decoding process.
-        bool intra_only;
+        bool intraOnly;
         /// Specifies whether the frame context should be reset to default values.
-        RESET_FRAME_CONTEXT reset_frame_context;
+        RESET_FRAME_CONTEXT resetFrameContext;
         /// The indices of the used reference frames.
-        uint8_t ref_frame_indices[3];
+        uint8_t refFrameIndices[3];
         /// Specifies the intended direction of the motion vector in time for each reference frame.
-        bool ref_frame_sign_bias[4];
+        bool refFrameSignBias[4];
         /// Specifies the precision of the motion vectors.
         ///
         /// False = quarter precision, True = eighth precision.
-        bool allow_high_precision_mv;
+        bool allowHighPrecisionMv;
         /// Specifies that the probabilities computed for this frame
         /// should be stored for reference by future frames.
-        bool refresh_frame_context;
+        bool refreshFrameContext;
         /// Contains a bitmask that specifies which reference frame slots
         /// will be updated with the current frame after it is decoded.
         ///
         /// First bit = first frame (1). Last bit = last frame (8).
-        uint8_t refresh_frame_flags;
+        uint8_t refreshFrameFlags;
         /// Specifies if parallel decoding mode is activated.
-        bool frame_parallel_decoding_mode;
+        bool frameParallelDecodingMode;
         /// Specifies which frame context to use.
-        uint8_t frame_context_idx;
+        uint8_t frameContextIdx;
         /// The size of the uncompressed header.
-        size_t uncompressed_header_size;
+        size_t uncompressedHeaderSize;
         /// The size of the uncompressed header.
-        size_t compressed_header_size;
+        size_t compressedHeaderSize;
         /// The size of the tile data.
-        size_t tile_size;
+        size_t tileSize;
         /// The color depth of the frame.
-        COLOR_DEPTH color_depth;
+        COLOR_DEPTH colorDepth;
         /// The color space of the frame.
-        COLOR_SPACE color_space;
+        COLOR_SPACE colorSpace;
         /// The color range of the frame.
-        COLOR_RANGE color_range;
+        COLOR_RANGE colorRange;
         /// Indicates if sub sampling is used along the x axis.
-        bool subsampling_x;
+        bool subsamplingX;
         /// Indicates if sub sampling is used along the y axis.
-        bool subsampling_y;
+        bool subsamplingY;
         /// The width of the frame.
         uint16_t width;
         /// The height of the frame.
         uint16_t height;
         /// A hint for the application for the desired width to render.
-        uint16_t render_width;
+        uint16_t renderWidth;
         /// A hint for the application for the desired height to render.
-        uint16_t render_height;
+        uint16_t renderHeight;
         /// A variable holding the vertical location of the block in units of 8x8 pixels.
-        uint16_t mi_cols;
+        uint16_t miCols;
         /// A variable holding the horizontal location of the block in units of 8x8 pixels.
-        uint16_t mi_rows;
+        uint16_t miRows;
         /// The base 2 logarithm of the height of each tile (where the height is measured in units
         /// of 8x8 blocks)
-        uint8_t tile_rows_log2;
+        uint8_t tileRowsLog2;
         /// The base 2 logarithm of the width of each tile (where the width is measured in units
         /// of 8x8 blocks)
-        uint8_t tile_cols_log2;
+        uint8_t tileColsLog2;
         /// The type of filter used in inter prediction.
-        INTERPOLATION_FILTER interpolation_filter;
+        INTERPOLATION_FILTER interpolationFilter;
         /// The loop filter strength.
-        uint8_t loop_filter_level;
+        uint8_t loopFilterLevel;
         /// The loop filter sharpness.
-        uint8_t loop_filter_sharpness;
+        uint8_t loopFilterSharpness;
         /// Indicates that the filter level depends on the mode and reference frame
         /// used to predict a block.
-        bool loop_filter_delta_enabled;
-        /// Indicates that the the bitstream contains the syntax element loop_filter_ref_delta.
-        bool update_ref_delta;
+        bool loopFilterDeltaEnabled;
+        /// Indicates that the the bitstream contains the syntax element loopFilterRefDelta.
+        bool updateRefDelta;
         /// Contains the adjustment needed for the filter level based on the chosen reference frame.
-        int8_t loop_filter_ref_deltas[4];
-        /// Indicates that the the bitstream contains the syntax element loop_filter_mode_deltas.
-        bool update_mode_delta;
+        int8_t loopFilterRefDeltas[4];
+        /// Indicates that the the bitstream contains the syntax element loopFilterModeDeltas.
+        bool updateModeDelta;
         /// Contains the adjustment needed for the filter level based on the chosen mode.
-        int8_t loop_filter_mode_deltas[2];
+        int8_t loopFilterModeDeltas[2];
         /// The base frame qindex. This is used for Y AC coefficients and as the base value
         /// for the other quantizers.
-        int32_t base_q_idx;
-        /// The Y DC quantizer relative to base_q_idx.
-        int32_t delta_q_y_dc;
-        /// The UV DC quantizer relative to base_q_idx.
-        int32_t delta_q_uv_dc;
-        /// The UV AC quantizer relative to base_q_idx.
-        int32_t delta_q_uv_ac;
+        int32_t baseQIdx;
+        /// The Y DC quantizer relative to baseQIdx.
+        int32_t deltaQYDc;
+        /// The UV DC quantizer relative to baseQIdx.
+        int32_t deltaQUvDc;
+        /// The UV AC quantizer relative to baseQIdx.
+        int32_t deltaQUvAc;
         /// Indicates that the frame is coded using a special 4x4 transform designed
         /// for encoding frames that are bit-identical with the original frames.
         bool lossless;
         /// Specifies that this frame makes use of the segmentation tool.
-        bool segmentation_enabled;
+        bool segmentationEnabled;
         /// Specifies that the segmentation map should be updated during the decoding of this frame.
-        bool segmentation_update_map;
-        /// The probability values to be used when decoding segment_id.
-        uint8_t segment_tree_probs[7];
-        /// The probability values to be used when decoding seg_id_predicted.
-        uint8_t segment_pred_probs[3];
+        bool segmentationUpdateMap;
+        /// The probability values to be used when decoding segmentId.
+        uint8_t segmentTreeProbs[7];
+        /// The probability values to be used when decoding segIdPredicted.
+        uint8_t segmentPredProbs[3];
         /// Indicates that the updates to the segmentation map are coded
         /// relative to the existing segmentation map.
-        bool segmentation_temporal_update;
+        bool segmentationTemporalUpdate;
         /// Indicates that new parameters are about to be specified for each segment.
-        bool segmentation_update_data;
+        bool segmentationUpdateData;
         /// Indicates that the segmentation parameters represent the actual values to be used,
         /// otherwise the segmentation parameters represent adjustments relative to the standard values.
-        bool segmentation_abs_or_delta_update;
+        bool segmentationAbsOrDeltaUpdate;
         /// Indicates that the corresponding feature is used in a segment.
-        bool segment_feature_enabled[8][4];
+        bool segmentFeatureEnabled[8][4];
         /// Specifies the values of the active features of a segment.
-        int16_t segment_feature_data[8][4];
+        int16_t segmentFeatureData[8][4];
 
         /// Creates a frame from the parser state.
-        static Frame create(VP9Parser &parser, size_t uncompressed_header_size, size_t compressed_header_size, size_t tile_size, std::vector<uint8_t> data)
-        {
-            Frame frame;
-
-            frame.data = data;
-            frame.profile = parser.profile;
-            frame.show_existing_frame = parser.show_existing_frame;
-            frame.frame_to_show_map_idx = parser.frame_to_show_map_idx;
-            frame.last_frame_type = parser.last_frame_type;
-            frame.frame_type = parser.frame_type;
-            frame.show_frame = parser.show_frame;
-            frame.error_resilient_mode = parser.error_resilient_mode;
-            frame.intra_only = parser.intra_only;
-            frame.reset_frame_context = parser.reset_frame_context;
-            memcpy(frame.ref_frame_indices, parser.ref_frame_indices, sizeof(parser.ref_frame_indices));
-            memcpy(frame.ref_frame_sign_bias, parser.ref_frame_sign_bias, sizeof(parser.ref_frame_sign_bias));
-            frame.allow_high_precision_mv = parser.allow_high_precision_mv;
-            frame.refresh_frame_context = parser.refresh_frame_context;
-            frame.refresh_frame_flags = parser.refresh_frame_flags;
-            frame.frame_parallel_decoding_mode = parser.frame_parallel_decoding_mode;
-            frame.frame_context_idx = parser.frame_context_idx;
-            frame.uncompressed_header_size = uncompressed_header_size;
-            frame.compressed_header_size = compressed_header_size;
-            frame.tile_size = tile_size;
-            frame.color_depth = parser.color_depth;
-            frame.color_space = parser.color_space;
-            frame.color_range = parser.color_range;
-            frame.subsampling_x = parser.subsampling_x;
-            frame.subsampling_y = parser.subsampling_y;
-            frame.width = parser.width;
-            frame.height = parser.height;
-            frame.render_width = parser.render_width;
-            frame.render_height = parser.render_height;
-            frame.mi_cols = parser.mi_cols;
-            frame.mi_rows = parser.mi_rows;
-            frame.tile_rows_log2 = parser.tile_rows_log2;
-            frame.tile_cols_log2 = parser.tile_cols_log2;
-            frame.interpolation_filter = parser.interpolation_filter;
-            frame.loop_filter_level = parser.loop_filter_level;
-            frame.loop_filter_sharpness = parser.loop_filter_sharpness;
-            frame.loop_filter_delta_enabled = parser.loop_filter_delta_enabled;
-            frame.update_ref_delta = parser.update_ref_delta;
-            memcpy(frame.loop_filter_ref_deltas, parser.loop_filter_ref_deltas, sizeof(parser.loop_filter_ref_deltas));
-            frame.update_mode_delta = parser.update_mode_delta;
-            memcpy(frame.loop_filter_mode_deltas, parser.loop_filter_mode_deltas, sizeof(parser.loop_filter_mode_deltas));
-            frame.base_q_idx = parser.base_q_idx;
-            frame.delta_q_y_dc = parser.delta_q_y_dc;
-            frame.delta_q_uv_dc = parser.delta_q_uv_dc;
-            frame.delta_q_uv_ac = parser.delta_q_uv_ac;
-            frame.lossless = parser.lossless;
-            frame.segmentation_enabled = parser.segmentation_enabled;
-            frame.segmentation_update_map = parser.segmentation_update_map;
-            memcpy(frame.segment_tree_probs, parser.segment_tree_probs, sizeof(parser.segment_tree_probs));
-            memcpy(frame.segment_pred_probs, parser.segment_pred_probs, sizeof(parser.segment_pred_probs));
-            frame.segmentation_temporal_update = parser.segmentation_temporal_update;
-            frame.segmentation_update_data = parser.segmentation_update_data;
-            frame.segmentation_abs_or_delta_update = parser.segmentation_abs_or_delta_update;
-            memcpy(frame.segment_feature_enabled, parser.segment_feature_enabled, sizeof(parser.segment_feature_enabled));
-            memcpy(frame.segment_feature_data, parser.segment_feature_data, sizeof(parser.segment_feature_data));
-
-            return frame;
-        }
+        static Frame create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize, std::vector<uint8_t> data);
 
         /// Returns a slice into the data of the compressed header.
-        Slice<uint8_t> compressed_header_data()
-        {
-            return {
-                data.data() + uncompressed_header_size,
-                compressed_header_size,
-            };
-        }
+        Slice<uint8_t> compressedHeaderData();
 
         /// Returns a slice into the data of the compressed header and tile data.
-        Slice<uint8_t> compressed_header_and_tile_data()
-        {
-            return {
-                data.data() + uncompressed_header_size,
-                data.size() - uncompressed_header_size,
-            };
-        }
+        Slice<uint8_t> compressedHeaderAndTileData();
 
         /// Returns a slice into the data of the tile data.
-        Slice<uint8_t> tile_data()
-        {
-            return {
-                data.data() + uncompressed_header_size + compressed_header_size,
-                data.size() - uncompressed_header_size - compressed_header_size,
-            };
-        }
+        Slice<uint8_t> tileData();
 
         /// Last reference frame index.
-        uint8_t last_ref_frame_index()
-        {
-            return ref_frame_indices[0];
-        }
+        uint8_t lastRefFrameIndex();
 
         /// Golden reference frame index.
-        uint8_t golden_ref_frame_index()
-        {
-            return ref_frame_indices[1];
-        }
+        uint8_t goldenRefFrameIndex();
 
         /// Alternate reference frame index.
-        uint8_t alt_ref_frame_index()
-        {
-            return ref_frame_indices[2];
-        }
+        uint8_t altRefFrameIndex();
 
         /// The subsampling the frame is using.
-        SUBSAMPLING subsampling()
-        {
-            if (!subsampling_x && !subsampling_y)
-            {
-                return SUBSAMPLING_YUV_444;
-            }
-            else if (!subsampling_x && subsampling_y)
-            {
-                return SUBSAMPLING_YUV_440;
-            }
-            else if (subsampling_x && !subsampling_y)
-            {
-                return SUBSAMPLING_YUV_422;
-            }
-            else
-            {
-                return SUBSAMPLING_YUV_420;
-            }
-        }
+        SUBSAMPLING subsampling();
     };
 
     /// Parses VP9 bitstreams.
     struct VP9Parser {
-        std::pair<uint16_t, uint16_t> ref_frame_sizes[8] = {};
+        std::pair<uint16_t, uint16_t> refFrameSizes[8] = {};
         PROFILE profile = PROFILE_0;
-        bool show_existing_frame = false;
-        Option<uint8_t> frame_to_show_map_idx = { false };
-        FRAME_TYPE last_frame_type = FRAME_TYPE_NON_KEY_FRAME;
-        FRAME_TYPE frame_type = FRAME_TYPE_NON_KEY_FRAME;
-        bool show_frame = false;
-        bool error_resilient_mode = false;
-        bool intra_only = false;
-        RESET_FRAME_CONTEXT reset_frame_context = RESET_FRAME_CONTEXT_NO_0;
-        uint8_t ref_frame_indices[3] = {};
-        bool ref_frame_sign_bias[4] = {};
-        bool allow_high_precision_mv = false;
-        bool refresh_frame_context = false;
-        uint8_t refresh_frame_flags = 0;
-        bool frame_parallel_decoding_mode = true;
-        uint8_t frame_context_idx = 0;
-        COLOR_DEPTH color_depth = COLOR_DEPTH_8;
-        COLOR_SPACE color_space = COLOR_SPACE_UNKNOWN;
-        COLOR_RANGE color_range = COLOR_RANGE_STUDIO_SWING;
-        bool subsampling_x = true;
-        bool subsampling_y = true;
+        bool showExistingFrame = false;
+        Option<uint8_t> frameToShowMapIdx = { false };
+        FRAME_TYPE lastFrameType = FRAME_TYPE_NON_KEY_FRAME;
+        FRAME_TYPE frameType = FRAME_TYPE_NON_KEY_FRAME;
+        bool showFrame = false;
+        bool errorResilientMode = false;
+        bool intraOnly = false;
+        RESET_FRAME_CONTEXT resetFrameContext = RESET_FRAME_CONTEXT_NO_0;
+        uint8_t refFrameIndices[3] = {};
+        bool refFrameSignBias[4] = {};
+        bool allowHighPrecisionMv = false;
+        bool refreshFrameContext = false;
+        uint8_t refreshFrameFlags = 0;
+        bool frameParallelDecodingMode = true;
+        uint8_t frameContextIdx = 0;
+        COLOR_DEPTH colorDepth = COLOR_DEPTH_8;
+        COLOR_SPACE colorSpace = COLOR_SPACE_UNKNOWN;
+        COLOR_RANGE colorRange = COLOR_RANGE_STUDIO_SWING;
+        bool subsamplingX = true;
+        bool subsamplingY = true;
         uint16_t width = 0;
         uint16_t height = 0;
-        uint16_t render_width = 0;
-        uint16_t render_height = 0;
-        uint16_t mi_cols = 0;
-        uint16_t mi_rows = 0;
-        uint8_t tile_rows_log2 = 0;
-        uint8_t tile_cols_log2 = 0;
-        INTERPOLATION_FILTER interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP;
-        uint8_t loop_filter_level = 0;
-        uint8_t loop_filter_sharpness = 0;
-        bool loop_filter_delta_enabled = false;
-        bool update_ref_delta = false;
-        int8_t loop_filter_ref_deltas[4] = {1, 0, -1, -1};
-        bool update_mode_delta = false;
-        int8_t loop_filter_mode_deltas[2] = {};
-        int32_t base_q_idx = 0;
-        int32_t delta_q_y_dc = 0;
-        int32_t delta_q_uv_dc = 0;
-        int32_t delta_q_uv_ac = 0;
+        uint16_t renderWidth = 0;
+        uint16_t renderHeight = 0;
+        uint16_t miCols = 0;
+        uint16_t miRows = 0;
+        uint8_t tileRowsLog2 = 0;
+        uint8_t tileColsLog2 = 0;
+        INTERPOLATION_FILTER interpolationFilter = INTERPOLATION_FILTER_EIGHTTAP;
+        uint8_t loopFilterLevel = 0;
+        uint8_t loopFilterSharpness = 0;
+        bool loopFilterDeltaEnabled = false;
+        bool updateRefDelta = false;
+        int8_t loopFilterRefDeltas[4] = {1, 0, -1, -1};
+        bool updateModeDelta = false;
+        int8_t loopFilterModeDeltas[2] = {};
+        int32_t baseQIdx = 0;
+        int32_t deltaQYDc = 0;
+        int32_t deltaQUvDc = 0;
+        int32_t deltaQUvAc = 0;
         bool lossless = false;
-        bool segmentation_enabled = false;
-        bool segmentation_update_map = false;
-        uint8_t segment_tree_probs[7] = {};
-        uint8_t segment_pred_probs[3] = {};
-        bool segmentation_temporal_update = false;
-        bool segmentation_update_data = false;
-        bool segmentation_abs_or_delta_update = false;
-        bool segment_feature_enabled[8][4] = {};
-        int16_t segment_feature_data[8][4] = {};
+        bool segmentationEnabled = false;
+        bool segmentationUpdateMap = false;
+        uint8_t segmentTreeProbs[7] = {};
+        uint8_t segmentPredProbs[3] = {};
+        bool segmentationTemporalUpdate = false;
+        bool segmentationUpdateData = false;
+        bool segmentationAbsOrDeltaUpdate = false;
+        bool segmentFeatureEnabled[8][4] = {};
+        int16_t segmentFeatureData[8][4] = {};
 
         /// Parses a VP9 bitstream packet and returns the encoded frames.
         ///
         /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
         /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
         /// parser in such cases results in garbage data or errors.
-        Result<std::vector<Frame>> parse_packet(std::vector<uint8_t> packet)
-        {
-            if (packet.empty())
-            {
-                return { OK, {} };
-            }
-
-            // Test for a super frame.
-            size_t last_byte_index = packet.size() - 1;
-            uint8_t last_byte = packet[last_byte_index];
-            if (last_byte & 0b1110'0000 == 0b1100'0000)
-            {
-                uint8_t bytes_per_framesize_minus_1 = (last_byte & 0b11000) >> 3;
-                uint8_t frames_in_superframe_minus_1 = last_byte & 0b111;
-                size_t bytes_size = bytes_per_framesize_minus_1 + 1;
-                size_t frame_count = frames_in_superframe_minus_1 + 1;
-                size_t index_size = 2 + (frame_count * bytes_size);
-                size_t first_byte_index = packet.size() - index_size;
-                uint8_t first_byte = packet[first_byte_index];
-
-                // Found a super frame.
-                if (first_byte == last_byte)
-                {
-                    std::vector<Frame> frames = {};
-                    frames.reserve(frame_count);
-
-                    size_t index_start = first_byte_index + 1;
-                    size_t entry_size = frame_count * bytes_size;
-
-                    std::vector<uint8_t> entry_data = {};
-                    entry_data.reserve(entry_size);
-                    entry_data.insert(entry_data.end(), packet.begin() + index_start, packet.begin() + index_start + entry_size);
-
-                    switch (frame_count)
-                    {
-                        case 1:
-                        {
-                            // Odd, but valid bitstream configuration.
-                            Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0);
-                            if (frame_size.error)
-                            {
-                                return { frame_size.error };
-                            }
-
-                            packet.resize(frame_size.value);
-                            Result<Frame> frame = parse_frame(packet);
-                            if (frame.error)
-                            {
-                                return { frame.error };
-                            }
-
-                            frames.push_back(frame.value);
-                            break;
-                        }
-                        case 2:
-                        {
-                            // Most common case. The first frame produces a frame that is not displayed but
-                            // stored as a reference frame. The second frame is mostly empty and references
-                            // the previously stored frame.
-                            Result<size_t> first_frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0);
-                            if (first_frame_size.error)
-                            {
-                                return { first_frame_size.error };
-                            }
-                            std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + first_frame_size.value, packet.end());
-                            packet.resize(first_frame_size.value);
-                            Result<Frame> first_frame = parse_frame(packet);
-                            if (first_frame.error)
-                            {
-                                return { first_frame.error };
-                            }
-
-                            Result<size_t> second_frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 1);
-                            if (second_frame_size.error)
-                            {
-                                return { second_frame_size.error };
-                            }
-                            left_over.resize(second_frame_size.value);
-                            Result<Frame> second_frame = parse_frame(left_over);
-                            if (second_frame.error)
-                            {
-                                return { second_frame.error };
-                            }
-
-                            frames.push_back(first_frame.value);
-                            frames.push_back(second_frame.value);
-                            break;
-                        }
-                        default:
-                        {
-                            // Odd, but also a valid bitstream configuration.
-                            for (size_t frame_index = 0; frame_index < frame_count; ++frame_index)
-                            {
-                                Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, frame_index);
-                                if (frame_size.error)
-                                {
-                                    return { frame_size.error };
-                                }
-
-                                std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + frame_size.value, packet.end());
-                                packet.resize(frame_size.value);
-                                Result<Frame> frame = parse_frame(packet);
-                                if (frame.error)
-                                {
-                                    return { frame.error };
-                                }
-                                frames.push_back(frame.value);
-
-                                packet = left_over;
-                            }
-                            break;
-                        }
-                    }
-
-                    return { OK, frames };
-                }
-            }
-
-            // Normal frame.
-            Result<Frame> frame = parse_frame(packet);
-            if (frame.error)
-            {
-                return { frame.error };
-            }
-            return { OK, { frame.value } };
-        }
+        Result<std::vector<Frame>> parsePacket(std::vector<uint8_t> packet);
 
     private:
-        Result<size_t> read_frame_size(MutableSlice<uint8_t> entry_data, size_t bytes_size, size_t index)
+        Result<size_t> readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index)
         {
             // sic! Even though the values inside the uncompressed header are saved in BE,
             // these values are saved in LE.
-            switch (bytes_size)
+            switch (bytesSize)
             {
                 case 1:
                 {
-                    return { OK, u8_from_le_bytes(entry_data.ptr + index) };
+                    return { OK, u8FromLeBytes(entryData.ptr + index) };
                 }
                 case 2:
                 {
-                    return { OK, u16_from_le_bytes(entry_data.ptr + (index * 2)) };
+                    return { OK, u16FromLeBytes(entryData.ptr + (index * 2)) };
                 }
                 case 3:
                 {
-                    uint8_t *three_bytes = entry_data.ptr + (index * 3);
-                    uint8_t four_bytes[4] = { three_bytes[0], three_bytes[1], three_bytes[2], 0 };
-                    return { OK, u32_from_le_bytes(four_bytes) };
+                    uint8_t *threeBytes = entryData.ptr + (index * 3);
+                    uint8_t fourBytes[4] = { threeBytes[0], threeBytes[1], threeBytes[2], 0 };
+                    return { OK, u32FromLeBytes(fourBytes) };
                 }
                 case 4:
                 {
-                    return { OK, u32_from_le_bytes(entry_data.ptr + (index * 4)) };
+                    return { OK, u32FromLeBytes(entryData.ptr + (index * 4)) };
                 }
                 default:
                 {
@@ -1127,352 +608,352 @@ class VP9FrameHeaderParser
             };
         }
 
-        Result<Frame> parse_frame(std::vector<uint8_t> data)
+        Result<Frame> parseFrame(std::vector<uint8_t> data)
         {
             BitReader br = BitReader({ data.data(), data.size() });
 
-            Result<uint8_t> frame_marker = br.read_u8(2);
-            if (frame_marker.error)
+            Result<uint8_t> frameMarker = br.readU8(2);
+            if (frameMarker.error)
             {
-                return { frame_marker.error };
+                return { frameMarker.error };
             }
-            if (frame_marker.value != 2)
+            if (frameMarker.value != 2)
             {
                 return { ERROR_INVALID_FRAME_MARKER };
             }
 
-            Result<uint8_t> profile_low_bit = br.read_u8(1);
-            if (profile_low_bit.error)
+            Result<uint8_t> profileLowBit = br.readU8(1);
+            if (profileLowBit.error)
             {
-                return { profile_low_bit.error };
+                return { profileLowBit.error };
             }
-            Result<uint8_t> profile_high_bit = br.read_u8(1);
-            if (profile_high_bit.error)
+            Result<uint8_t> profileHighBit = br.readU8(1);
+            if (profileHighBit.error)
             {
-                return { profile_high_bit.error };
+                return { profileHighBit.error };
             }
-            this->profile = u8_to_profile((profile_high_bit.value << 1) + profile_low_bit.value);
+            this->profile = u8ToProfile((profileHighBit.value << 1) + profileLowBit.value);
             if (this->profile == PROFILE_3)
             {
-                Result<uint8_t> _reserved_zero = br.read_u8(1);
-                if (_reserved_zero.error)
+                Result<uint8_t> ReservedZero = br.readU8(1);
+                if (ReservedZero.error)
                 {
-                    return { _reserved_zero.error };
+                    return { ReservedZero.error };
                 }
             }
 
-            Result<bool> show_existing_frame_result = br.read_bool();
-            if (show_existing_frame_result.error)
+            Result<bool> showExistingFrameResult = br.readBool();
+            if (showExistingFrameResult.error)
             {
-                return { show_existing_frame_result.error };
+                return { showExistingFrameResult.error };
             }
-            this->show_existing_frame = show_existing_frame_result.value;
+            this->showExistingFrame = showExistingFrameResult.value;
 
-            if (this->show_existing_frame)
+            if (this->showExistingFrame)
             {
-                Result<uint8_t> frame_to_show_map_idx_result = br.read_u8(3);
-                if (frame_to_show_map_idx_result.error)
+                Result<uint8_t> frameToShowMapIdxResult = br.readU8(3);
+                if (frameToShowMapIdxResult.error)
                 {
-                    return { frame_to_show_map_idx_result.error };
+                    return { frameToShowMapIdxResult.error };
                 }
-                this->frame_to_show_map_idx = { true, frame_to_show_map_idx_result.value };
-                this->refresh_frame_flags = 0;
-                this->loop_filter_level = 0;
+                this->frameToShowMapIdx = { true, frameToShowMapIdxResult.value };
+                this->refreshFrameFlags = 0;
+                this->loopFilterLevel = 0;
 
                 Frame frame = Frame::create(*this, 0, 0, 0, {});
                 return { OK, frame };
             }
             else
             {
-                this->frame_to_show_map_idx = { false };
+                this->frameToShowMapIdx = { false };
             }
 
-            this->last_frame_type = this->frame_type;
+            this->lastFrameType = this->frameType;
 
-            Result<bool> frame_type_bool = br.read_bool();
-            if (frame_type_bool.error)
+            Result<bool> frameTypeBool = br.readBool();
+            if (frameTypeBool.error)
             {
-                return { frame_type_bool.error };
+                return { frameTypeBool.error };
             }
-            this->frame_type = bool_to_frame_type(frame_type_bool.value);
+            this->frameType = boolToFrameType(frameTypeBool.value);
 
-            Result<bool> show_frame_result = br.read_bool();
-            if (show_frame_result.error)
+            Result<bool> showFrameResult = br.readBool();
+            if (showFrameResult.error)
             {
-                return { show_frame_result.error };
+                return { showFrameResult.error };
             }
-            this->show_frame = show_frame_result.value;
+            this->showFrame = showFrameResult.value;
 
-            Result<bool> error_resilient_mode_result = br.read_bool();
-            if (error_resilient_mode_result.error)
+            Result<bool> errorResilientModeResult = br.readBool();
+            if (errorResilientModeResult.error)
             {
-                return { error_resilient_mode_result.error };
+                return { errorResilientModeResult.error };
             }
-            this->error_resilient_mode = error_resilient_mode_result.value;
+            this->errorResilientMode = errorResilientModeResult.value;
 
-            if (this->frame_type == FRAME_TYPE_KEY_FRAME)
+            if (this->frameType == FRAME_TYPE_KEY_FRAME)
             {
-                ERROR frame_sync_code_error = frame_sync_code(br);
-                if (frame_sync_code_error)
+                ERROR frameSyncCodeError = frameSyncCode(br);
+                if (frameSyncCodeError)
                 {
-                    return { frame_sync_code_error };
+                    return { frameSyncCodeError };
                 }
-                ERROR color_config_error = color_config(br);
-                if (color_config_error)
+                ERROR colorConfigError = colorConfig(br);
+                if (colorConfigError)
                 {
-                    return { color_config_error };
+                    return { colorConfigError };
                 }
-                ERROR frame_size_error = frame_size(br);
-                if (frame_size_error)
+                ERROR frameSizeError = frameSize(br);
+                if (frameSizeError)
                 {
-                    return { frame_size_error };
+                    return { frameSizeError };
                 }
-                ERROR render_size_error = render_size(br);
-                if (render_size_error)
+                ERROR renderSizeError = renderSize(br);
+                if (renderSizeError)
                 {
-                    return { render_size_error };
+                    return { renderSizeError };
                 }
-                this->refresh_frame_flags = 0xFF;
+                this->refreshFrameFlags = 0xFF;
             }
             else
             {
-                if (!this->show_frame)
+                if (!this->showFrame)
                 {
-                    Result<bool> intra_only_result = br.read_bool();
-                    if (intra_only_result.error)
+                    Result<bool> intraOnlyResult = br.readBool();
+                    if (intraOnlyResult.error)
                     {
-                        return { intra_only_result.error };
+                        return { intraOnlyResult.error };
                     }
-                    this->intra_only = intra_only_result.value;
+                    this->intraOnly = intraOnlyResult.value;
                 }
                 else
                 {
-                    this->intra_only = false;
+                    this->intraOnly = false;
                 };
 
-                if (!this->error_resilient_mode)
+                if (!this->errorResilientMode)
                 {
-                    Result<uint8_t> reset_frame_context_result = br.read_u8(2);
-                    if (reset_frame_context_result.error)
+                    Result<uint8_t> resetFrameContextResult = br.readU8(2);
+                    if (resetFrameContextResult.error)
                     {
-                        return { reset_frame_context_result.error };
+                        return { resetFrameContextResult.error };
                     }
-                    this->reset_frame_context = u8_to_reset_frame_context(reset_frame_context_result.value);
+                    this->resetFrameContext = u8ToResetFrameContext(resetFrameContextResult.value);
                 }
                 else
                 {
-                    this->reset_frame_context = RESET_FRAME_CONTEXT_NO_0;
+                    this->resetFrameContext = RESET_FRAME_CONTEXT_NO_0;
                 };
 
-                if (this->intra_only)
+                if (this->intraOnly)
                 {
-                    ERROR frame_sync_code_error = frame_sync_code(br);
-                    if (frame_sync_code_error)
+                    ERROR frameSyncCodeError = frameSyncCode(br);
+                    if (frameSyncCodeError)
                     {
-                        return { frame_sync_code_error };
+                        return { frameSyncCodeError };
                     }
                     if (this->profile > PROFILE_0)
                     {
-                        ERROR color_config_error = color_config(br);
-                        if (color_config_error)
+                        ERROR colorConfigError = colorConfig(br);
+                        if (colorConfigError)
                         {
-                            return { color_config_error };
+                            return { colorConfigError };
                         }
                     } else {
-                        this->color_depth = COLOR_DEPTH_8;
-                        this->color_space = COLOR_SPACE_BT601;
-                        this->subsampling_x = true;
-                        this->subsampling_y = true;
+                        this->colorDepth = COLOR_DEPTH_8;
+                        this->colorSpace = COLOR_SPACE_BT601;
+                        this->subsamplingX = true;
+                        this->subsamplingY = true;
                     }
-                    Result<uint8_t> refresh_frame_flags_result = br.read_u8(8);
-                    if (refresh_frame_flags_result.error)
+                    Result<uint8_t> refreshFrameFlagsResult = br.readU8(8);
+                    if (refreshFrameFlagsResult.error)
                     {
-                        return { refresh_frame_flags_result.error };
+                        return { refreshFrameFlagsResult.error };
                     }
-                    this->refresh_frame_flags = refresh_frame_flags_result.value;
-                    ERROR frame_size_error = frame_size(br);
-                    if (frame_size_error)
+                    this->refreshFrameFlags = refreshFrameFlagsResult.value;
+                    ERROR frameSizeError = frameSize(br);
+                    if (frameSizeError)
                     {
-                        return { frame_size_error };
+                        return { frameSizeError };
                     }
-                    ERROR render_size_error = render_size(br);
-                    if (render_size_error)
+                    ERROR renderSizeError = renderSize(br);
+                    if (renderSizeError)
                     {
-                        return { render_size_error };
+                        return { renderSizeError };
                     }
                 }
                 else
                 {
-                    Result<uint8_t> refresh_frame_flags_result = br.read_u8(8);
-                    if (refresh_frame_flags_result.error)
+                    Result<uint8_t> refreshFrameFlagsResult = br.readU8(8);
+                    if (refreshFrameFlagsResult.error)
                     {
-                        return { refresh_frame_flags_result.error };
+                        return { refreshFrameFlagsResult.error };
                     }
-                    this->refresh_frame_flags = refresh_frame_flags_result.value;
+                    this->refreshFrameFlags = refreshFrameFlagsResult.value;
                     for (size_t i = 0; i < 3; ++i)
                     {
-                        Result<uint8_t> ref_frame_indices_result = br.read_u8(3);
-                        if (ref_frame_indices_result.error)
+                        Result<uint8_t> refFrameIndicesResult = br.readU8(3);
+                        if (refFrameIndicesResult.error)
                         {
-                            return { ref_frame_indices_result.error };
+                            return { refFrameIndicesResult.error };
                         }
-                        this->ref_frame_indices[i] = ref_frame_indices_result.value;
+                        this->refFrameIndices[i] = refFrameIndicesResult.value;
 
-                        Result<bool> ref_frame_sign_bias_result = br.read_bool();
-                        if (ref_frame_sign_bias_result.error)
+                        Result<bool> refFrameSignBiasResult = br.readBool();
+                        if (refFrameSignBiasResult.error)
                         {
-                            return { ref_frame_sign_bias_result.error };
+                            return { refFrameSignBiasResult.error };
                         }
-                        this->ref_frame_sign_bias[LAST_FRAME + i] = ref_frame_sign_bias_result.value;
+                        this->refFrameSignBias[LAST_FRAME + i] = refFrameSignBiasResult.value;
                     }
-                    ERROR frame_size_with_refs_error = frame_size_with_refs(br);
-                    if (frame_size_with_refs_error)
+                    ERROR frameSizeWithRefsError = frameSizeWithRefs(br);
+                    if (frameSizeWithRefsError)
                     {
-                        return { frame_size_with_refs_error };
+                        return { frameSizeWithRefsError };
                     }
-                    Result<bool> allow_high_precision_mv_result = br.read_bool();
-                    if (allow_high_precision_mv_result.error)
+                    Result<bool> allowHighPrecisionMvResult = br.readBool();
+                    if (allowHighPrecisionMvResult.error)
                     {
-                        return { allow_high_precision_mv_result.error };
+                        return { allowHighPrecisionMvResult.error };
                     }
-                    ERROR read_interpolation_filter_error = read_interpolation_filter(br);
-                    if (read_interpolation_filter_error)
+                    ERROR readInterpolationFilterError = readInterpolationFilter(br);
+                    if (readInterpolationFilterError)
                     {
-                        return { read_interpolation_filter_error };
+                        return { readInterpolationFilterError };
                     }
                 }
             }
 
-            if (!this->error_resilient_mode)
+            if (!this->errorResilientMode)
             {
-                Result<bool> refresh_frame_context_result = br.read_bool();
-                if (refresh_frame_context_result.error)
+                Result<bool> refreshFrameContextResult = br.readBool();
+                if (refreshFrameContextResult.error)
                 {
-                    return { refresh_frame_context_result.error };
+                    return { refreshFrameContextResult.error };
                 }
-                this->refresh_frame_context = refresh_frame_context_result.value;
+                this->refreshFrameContext = refreshFrameContextResult.value;
 
-                Result<bool> frame_parallel_decoding_mode_result = br.read_bool();
-                if (frame_parallel_decoding_mode_result.error)
+                Result<bool> frameParallelDecodingModeResult = br.readBool();
+                if (frameParallelDecodingModeResult.error)
                 {
-                    return { frame_parallel_decoding_mode_result.error };
+                    return { frameParallelDecodingModeResult.error };
                 }
-                this->frame_parallel_decoding_mode = frame_parallel_decoding_mode_result.value;
+                this->frameParallelDecodingMode = frameParallelDecodingModeResult.value;
             }
             else
             {
-                this->refresh_frame_context = false;
-                this->frame_parallel_decoding_mode = false;
+                this->refreshFrameContext = false;
+                this->frameParallelDecodingMode = false;
             };
 
-            Result<uint8_t> frame_context_idx_result = br.read_u8(2);
-            if (frame_context_idx_result.error)
+            Result<uint8_t> frameContextIdxResult = br.readU8(2);
+            if (frameContextIdxResult.error)
             {
-                return { frame_context_idx_result.error };
+                return { frameContextIdxResult.error };
             }
-            this->frame_context_idx = frame_context_idx_result.value;
+            this->frameContextIdx = frameContextIdxResult.value;
 
-            if (this->intra_only || this->error_resilient_mode)
+            if (this->intraOnly || this->errorResilientMode)
             {
-                this->frame_context_idx = 0;
+                this->frameContextIdx = 0;
             }
 
-            if (this->frame_type == FRAME_TYPE_KEY_FRAME || this->error_resilient_mode || this->intra_only)
+            if (this->frameType == FRAME_TYPE_KEY_FRAME || this->errorResilientMode || this->intraOnly)
             {
                 // Reset the loop filter deltas.
-                this->loop_filter_ref_deltas[INTRA_FRAME] = 1;
-                this->loop_filter_ref_deltas[LAST_FRAME] = 0;
-                this->loop_filter_ref_deltas[GOLDEN_FRAME] = -1;
-                this->loop_filter_ref_deltas[ALTREF_FRAME] = -1;
-                this->loop_filter_mode_deltas[0] = 0;
-                this->loop_filter_mode_deltas[1] = 0;
+                this->loopFilterRefDeltas[INTRA_FRAME] = 1;
+                this->loopFilterRefDeltas[LAST_FRAME] = 0;
+                this->loopFilterRefDeltas[GOLDEN_FRAME] = -1;
+                this->loopFilterRefDeltas[ALTREF_FRAME] = -1;
+                this->loopFilterModeDeltas[0] = 0;
+                this->loopFilterModeDeltas[1] = 0;
             }
-            ERROR loop_filter_params_error = loop_filter_params(br);
-            if (loop_filter_params_error)
+            ERROR loopFilterParamsError = loopFilterParams(br);
+            if (loopFilterParamsError)
             {
-                return { loop_filter_params_error };
+                return { loopFilterParamsError };
             }
 
-            ERROR quantization_params_error = quantization_params(br);
-            if (quantization_params_error)
+            ERROR quantizationParamsError = quantizationParams(br);
+            if (quantizationParamsError)
             {
-                return { quantization_params_error };
+                return { quantizationParamsError };
             }
-            ERROR segmentation_params_error = segmentation_params(br);
-            if (segmentation_params_error)
+            ERROR segmentationParamsError = segmentationParams(br);
+            if (segmentationParamsError)
             {
-                return { segmentation_params_error };
+                return { segmentationParamsError };
             }
-            ERROR tile_info_error = tile_info(br);
-            if (tile_info_error)
+            ERROR tileInfoError = tileInfo(br);
+            if (tileInfoError)
             {
-                return { tile_info_error };
+                return { tileInfoError };
             }
 
-            Result<uint16_t> compressed_header_size_result = br.read_u16(16);
-            if (compressed_header_size_result.error)
+            Result<uint16_t> compressedHeaderSizeResult = br.readU16(16);
+            if (compressedHeaderSizeResult.error)
             {
-                return { compressed_header_size_result.error };
+                return { compressedHeaderSizeResult.error };
             }
-            size_t compressed_header_size = compressed_header_size_result.value;
-            ERROR trailing_bits_error = trailing_bits(br);
-            if (trailing_bits_error)
+            size_t compressedHeaderSize = compressedHeaderSizeResult.value;
+            ERROR trailingBitsError = trailingBits(br);
+            if (trailingBitsError)
             {
-                return { trailing_bits_error };
+                return { trailingBitsError };
             }
-            size_t uncompressed_header_size = br.position_in_bits / 8;
+            size_t uncompressedHeaderSize = br.positionInBits / 8;
 
             size_t size = data.size();
-            size_t tile_size = size - (uncompressed_header_size + compressed_header_size);
+            size_t tileSize = size - (uncompressedHeaderSize + compressedHeaderSize);
 
             Frame frame = Frame::create(
                 *this,
-                uncompressed_header_size,
-                compressed_header_size,
-                tile_size,
+                uncompressedHeaderSize,
+                compressedHeaderSize,
+                tileSize,
                 data
             );
 
-            refresh_ref_frames();
+            refreshRefFrames();
 
             return { OK, frame };
         }
 
         // Implements spec "8.10 Reference frame update process".
-        void refresh_ref_frames()
+        void refreshRefFrames()
         {
-            uint8_t flags = this->refresh_frame_flags;
-            uint16_t new_width = this->width;
-            uint16_t new_height = this->height;
+            uint8_t flags = this->refreshFrameFlags;
+            uint16_t newWidth = this->width;
+            uint16_t newHeight = this->height;
 
             for (size_t index = 0; index < 8; ++index)
             {
                 if (((flags >> index) & 1) == 1)
                 {
-                    ref_frame_sizes[index] = { new_width, new_height };
+                    refFrameSizes[index] = { newWidth, newHeight };
                 }
             }
         }
 
-        ERROR frame_sync_code(BitReader &br)
+        ERROR frameSyncCode(BitReader &br)
         {
-            Result<uint8_t> frame_sync_byte_0 = br.read_u8(8);
-            if (frame_sync_byte_0.error)
+            Result<uint8_t> frameSyncByte_0 = br.readU8(8);
+            if (frameSyncByte_0.error)
             {
-                return frame_sync_byte_0.error;
+                return frameSyncByte_0.error;
             }
-            Result<uint8_t> frame_sync_byte_1 = br.read_u8(8);
-            if (frame_sync_byte_1.error)
+            Result<uint8_t> frameSyncByte_1 = br.readU8(8);
+            if (frameSyncByte_1.error)
             {
-                return frame_sync_byte_1.error;
+                return frameSyncByte_1.error;
             }
-            Result<uint8_t> frame_sync_byte_2 = br.read_u8(8);
-            if (frame_sync_byte_2.error)
+            Result<uint8_t> frameSyncByte_2 = br.readU8(8);
+            if (frameSyncByte_2.error)
             {
-                return frame_sync_byte_2.error;
+                return frameSyncByte_2.error;
             }
 
-            if (frame_sync_byte_0.value != 0x49 && frame_sync_byte_1.value != 0x83 && frame_sync_byte_2.value != 0x42)
+            if (frameSyncByte_0.value != 0x49 && frameSyncByte_1.value != 0x83 && frameSyncByte_2.value != 0x42)
             {
                 return ERROR_INVALID_SYNC_BYTE;
             }
@@ -1480,157 +961,157 @@ class VP9FrameHeaderParser
             return OK;
         }
 
-        ERROR color_config(BitReader &br)
+        ERROR colorConfig(BitReader &br)
         {
             if (this->profile >= PROFILE_2)
             {
-                Result<bool> ten_or_twelve_bit = br.read_bool();
-                if (ten_or_twelve_bit.error)
+                Result<bool> tenOrTwelveBit = br.readBool();
+                if (tenOrTwelveBit.error)
                 {
-                    return ten_or_twelve_bit.error;
+                    return tenOrTwelveBit.error;
                 }
-                if (ten_or_twelve_bit.value)
+                if (tenOrTwelveBit.value)
                 {
-                    this->color_depth = COLOR_DEPTH_12;
+                    this->colorDepth = COLOR_DEPTH_12;
                 }
                 else
                 {
-                    this->color_depth = COLOR_DEPTH_10;
+                    this->colorDepth = COLOR_DEPTH_10;
                 }
             }
             else
             {
-                this->color_depth = COLOR_DEPTH_8;
+                this->colorDepth = COLOR_DEPTH_8;
             };
 
-            Result<uint8_t> color_space_result = br.read_u8(3);
-            if (color_space_result.error)
+            Result<uint8_t> colorSpaceResult = br.readU8(3);
+            if (colorSpaceResult.error)
             {
-                return color_space_result.error;
+                return colorSpaceResult.error;
             }
-            this->color_space = u8_to_color_space(color_space_result.value);
+            this->colorSpace = u8ToColorSpace(colorSpaceResult.value);
 
-            if (this->color_space == COLOR_SPACE_RGB)
+            if (this->colorSpace == COLOR_SPACE_RGB)
             {
-                this->color_range = COLOR_RANGE_FULL_SWING;
+                this->colorRange = COLOR_RANGE_FULL_SWING;
                 if (this->profile == PROFILE_1 || this->profile == PROFILE_3)
                 {
-                    this->subsampling_x = false;
-                    this->subsampling_y = false;
-                    Result<uint8_t> reserved_zero = br.read_u8(1);
-                    if (reserved_zero.error)
+                    this->subsamplingX = false;
+                    this->subsamplingY = false;
+                    Result<uint8_t> reservedZero = br.readU8(1);
+                    if (reservedZero.error)
                     {
-                        return reserved_zero.error;
+                        return reservedZero.error;
                     }
                 }
             } else {
-                Result<bool> color_range_result = br.read_bool();
-                if (color_range_result.error)
+                Result<bool> colorRangeResult = br.readBool();
+                if (colorRangeResult.error)
                 {
-                    return color_range_result.error;
+                    return colorRangeResult.error;
                 }
-                this->color_range = bool_to_color_range(color_range_result.value);
+                this->colorRange = boolToColorRange(colorRangeResult.value);
                 if (this->profile == PROFILE_1 || this->profile == PROFILE_3)
                 {
-                    Result<bool> subsampling_x_result = br.read_bool();
-                    if (subsampling_x_result.error)
+                    Result<bool> subsamplingXResult = br.readBool();
+                    if (subsamplingXResult.error)
                     {
-                        return subsampling_x_result.error;
+                        return subsamplingXResult.error;
                     }
-                    this->subsampling_x = subsampling_x_result.value;
-                    Result<bool> subsampling_y_result = br.read_bool();
-                    if (subsampling_y_result.error)
+                    this->subsamplingX = subsamplingXResult.value;
+                    Result<bool> subsamplingYResult = br.readBool();
+                    if (subsamplingYResult.error)
                     {
-                        return subsampling_y_result.error;
+                        return subsamplingYResult.error;
                     }
-                    this->subsampling_y = subsampling_y_result.value;
-                    Result<uint8_t> reserved_zero = br.read_u8(1);
-                    if (reserved_zero.error)
+                    this->subsamplingY = subsamplingYResult.value;
+                    Result<uint8_t> reservedZero = br.readU8(1);
+                    if (reservedZero.error)
                     {
-                        return reserved_zero.error;
+                        return reservedZero.error;
                     }
                 }
                 else
                 {
-                    this->subsampling_x = true;
-                    this->subsampling_y = true;
+                    this->subsamplingX = true;
+                    this->subsamplingY = true;
                 }
             }
 
             return OK;
         }
 
-        ERROR frame_size(BitReader &br)
+        ERROR frameSize(BitReader &br)
         {
-            Result<uint16_t> frame_width_minus_1 = br.read_u16(16);
-            if (frame_width_minus_1.error)
+            Result<uint16_t> frameWidthMinus_1 = br.readU16(16);
+            if (frameWidthMinus_1.error)
             {
-                return frame_width_minus_1.error;
+                return frameWidthMinus_1.error;
             }
-            Result<uint16_t> frame_height_minus_1 = br.read_u16(16);
-            if (frame_height_minus_1.error)
+            Result<uint16_t> frameHeightMinus_1 = br.readU16(16);
+            if (frameHeightMinus_1.error)
             {
-                return frame_height_minus_1.error;
+                return frameHeightMinus_1.error;
             }
-            this->width = frame_width_minus_1.value + 1;
-            this->height = frame_height_minus_1.value + 1;
+            this->width = frameWidthMinus_1.value + 1;
+            this->height = frameHeightMinus_1.value + 1;
 
-            compute_image_size();
+            computeImageSize();
 
             return OK;
         }
 
-        ERROR render_size(BitReader &br)
+        ERROR renderSize(BitReader &br)
         {
-            Result<bool> render_and_frame_size_different = br.read_bool();
-            if (render_and_frame_size_different.error)
+            Result<bool> renderAndFrameSizeDifferent = br.readBool();
+            if (renderAndFrameSizeDifferent.error)
             {
-                return render_and_frame_size_different.error;
+                return renderAndFrameSizeDifferent.error;
             }
-            if (render_and_frame_size_different.value)
+            if (renderAndFrameSizeDifferent.value)
             {
-                Result<uint16_t> render_width_minus_1 = br.read_u16(16);
-                if (render_width_minus_1.error)
+                Result<uint16_t> renderWidthMinus_1 = br.readU16(16);
+                if (renderWidthMinus_1.error)
                 {
-                    return render_width_minus_1.error;
+                    return renderWidthMinus_1.error;
                 }
-                Result<uint16_t> render_height_minus_1 = br.read_u16(16);
-                if (render_height_minus_1.error)
+                Result<uint16_t> renderHeightMinus_1 = br.readU16(16);
+                if (renderHeightMinus_1.error)
                 {
-                    return render_height_minus_1.error;
+                    return renderHeightMinus_1.error;
                 }
-                this->render_width = render_width_minus_1.value + 1;
-                this->render_height = render_height_minus_1.value + 1;
+                this->renderWidth = renderWidthMinus_1.value + 1;
+                this->renderHeight = renderHeightMinus_1.value + 1;
             }
             else
             {
-                this->render_width = this->width;
-                this->render_height = this->height;
+                this->renderWidth = this->width;
+                this->renderHeight = this->height;
             }
 
             return OK;
         }
 
-        ERROR frame_size_with_refs(BitReader &br)
+        ERROR frameSizeWithRefs(BitReader &br)
         {
-            bool found_ref = false;
+            bool foundRef = false;
             for (uint8_t i = 0; i < 3; ++i)
             {
-                Result<bool> found_ref_result = br.read_bool();
-                if (found_ref_result.error)
+                Result<bool> foundRefResult = br.readBool();
+                if (foundRefResult.error)
                 {
-                    return found_ref_result.error;
+                    return foundRefResult.error;
                 }
-                found_ref = found_ref_result.value;
+                foundRef = foundRefResult.value;
 
-                if (found_ref)
+                if (foundRef)
                 {
-                    uint8_t ref_frame_index = this->ref_frame_indices[i];
-                    if (ref_frame_index >= 8)
+                    uint8_t refFrameIndex = this->refFrameIndices[i];
+                    if (refFrameIndex >= 8)
                     {
                         return ERROR_INVALID_REF_FRAME_INDEX;
                     }
-                    std::pair<uint16_t, uint16_t> sizes = this->ref_frame_sizes[ref_frame_index];
+                    std::pair<uint16_t, uint16_t> sizes = this->refFrameSizes[refFrameIndex];
 
                     this->width = sizes.first;
                     this->height = sizes.second;
@@ -1638,69 +1119,69 @@ class VP9FrameHeaderParser
                 }
             }
 
-            if (!found_ref)
+            if (!foundRef)
             {
-                ERROR frame_size_error = frame_size(br);
-                if (frame_size_error)
+                ERROR frameSizeError = frameSize(br);
+                if (frameSizeError)
                 {
-                    return frame_size_error;
+                    return frameSizeError;
                 }
             }
             else
             {
-                compute_image_size();
+                computeImageSize();
             }
 
-            ERROR render_size_error = render_size(br);
-            if (render_size_error)
+            ERROR renderSizeError = renderSize(br);
+            if (renderSizeError)
             {
-                return render_size_error;
+                return renderSizeError;
             }
 
             return OK;
         }
 
-        void compute_image_size()
+        void computeImageSize()
         {
-            this->mi_cols = (this->width + 7) >> 3;
-            this->mi_rows = (this->height + 7) >> 3;
+            this->miCols = (this->width + 7) >> 3;
+            this->miRows = (this->height + 7) >> 3;
         }
 
-        ERROR read_interpolation_filter(BitReader &br)
+        ERROR readInterpolationFilter(BitReader &br)
         {
-            Result<bool> is_filter_switchable = br.read_bool();
-            if (is_filter_switchable.error)
+            Result<bool> isFilterSwitchable = br.readBool();
+            if (isFilterSwitchable.error)
             {
-                return is_filter_switchable.error;
+                return isFilterSwitchable.error;
             }
 
-            if (is_filter_switchable.value)
+            if (isFilterSwitchable.value)
             {
-                this->interpolation_filter = INTERPOLATION_FILTER_SWITCHABLE;
+                this->interpolationFilter = INTERPOLATION_FILTER_SWITCHABLE;
             }
             else
             {
-                Result<uint8_t> raw_interpolation_filter = br.read_u8(2);
-                if (raw_interpolation_filter.error)
+                Result<uint8_t> rawInterpolationFilter = br.readU8(2);
+                if (rawInterpolationFilter.error)
                 {
-                    return raw_interpolation_filter.error;
+                    return rawInterpolationFilter.error;
                 }
-                switch (raw_interpolation_filter.value)
+                switch (rawInterpolationFilter.value)
                 {
                     case 0:
-                        this->interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP_SMOOTH;
+                        this->interpolationFilter = INTERPOLATION_FILTER_EIGHTTAP_SMOOTH;
                         break;
                     case 1:
-                        this->interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP;
+                        this->interpolationFilter = INTERPOLATION_FILTER_EIGHTTAP;
                         break;
                     case 2:
-                        this->interpolation_filter = INTERPOLATION_FILTER_EIGHTTAP_SHARP;
+                        this->interpolationFilter = INTERPOLATION_FILTER_EIGHTTAP_SHARP;
                         break;
                     case 3:
-                        this->interpolation_filter = INTERPOLATION_FILTER_BILINEAR;
+                        this->interpolationFilter = INTERPOLATION_FILTER_BILINEAR;
                         break;
                     default:
-                        this->interpolation_filter = INTERPOLATION_FILTER_UNKNOWN;
+                        this->interpolationFilter = INTERPOLATION_FILTER_UNKNOWN;
                         break;
                 }
             }
@@ -1708,74 +1189,74 @@ class VP9FrameHeaderParser
             return OK;
         }
 
-        ERROR loop_filter_params(BitReader &br)
+        ERROR loopFilterParams(BitReader &br)
         {
-            Result<uint8_t> loop_filter_level_result = br.read_u8(6);
-            if (loop_filter_level_result.error)
+            Result<uint8_t> loopFilterLevelResult = br.readU8(6);
+            if (loopFilterLevelResult.error)
             {
-                return loop_filter_level_result.error;
+                return loopFilterLevelResult.error;
             }
-            this->loop_filter_level = loop_filter_level_result.value;
+            this->loopFilterLevel = loopFilterLevelResult.value;
 
-            Result<uint8_t> loop_filter_sharpness_result = br.read_u8(3);
-            if (loop_filter_sharpness_result.error)
+            Result<uint8_t> loopFilterSharpnessResult = br.readU8(3);
+            if (loopFilterSharpnessResult.error)
             {
-                return loop_filter_sharpness_result.error;
+                return loopFilterSharpnessResult.error;
             }
-            this->loop_filter_sharpness = loop_filter_sharpness_result.value;
+            this->loopFilterSharpness = loopFilterSharpnessResult.value;
 
-            Result<bool> loop_filter_delta_enabled_result = br.read_bool();
-            if (loop_filter_delta_enabled_result.error)
+            Result<bool> loopFilterDeltaEnabledResult = br.readBool();
+            if (loopFilterDeltaEnabledResult.error)
             {
-                return loop_filter_delta_enabled_result.error;
+                return loopFilterDeltaEnabledResult.error;
             }
-            this->loop_filter_delta_enabled = loop_filter_delta_enabled_result.value;
+            this->loopFilterDeltaEnabled = loopFilterDeltaEnabledResult.value;
 
-            if (this->loop_filter_delta_enabled)
+            if (this->loopFilterDeltaEnabled)
             {
-                Result<bool> loop_filter_delta_update_result = br.read_bool();
-                if (loop_filter_delta_update_result.error)
+                Result<bool> loopFilterDeltaUpdateResult = br.readBool();
+                if (loopFilterDeltaUpdateResult.error)
                 {
-                    return loop_filter_delta_update_result.error;
+                    return loopFilterDeltaUpdateResult.error;
                 }
 
-                if (loop_filter_delta_update_result.value)
+                if (loopFilterDeltaUpdateResult.value)
                 {
                     for (uint8_t i = 0; i < 4; ++i)
                     {
-                        Result<bool> update_ref_delta_result = br.read_bool();
-                        if (update_ref_delta_result.error)
+                        Result<bool> updateRefDeltaResult = br.readBool();
+                        if (updateRefDeltaResult.error)
                         {
-                            return update_ref_delta_result.error;
+                            return updateRefDeltaResult.error;
                         }
 
-                        if (update_ref_delta_result.value)
+                        if (updateRefDeltaResult.value)
                         {
-                            Result<int8_t> loop_filter_ref_delta_result = br.read_inverse_i8(6);
-                            if (loop_filter_ref_delta_result.error)
+                            Result<int8_t> loopFilterRefDeltaResult = br.readInverseI8(6);
+                            if (loopFilterRefDeltaResult.error)
                             {
-                                return loop_filter_ref_delta_result.error;
+                                return loopFilterRefDeltaResult.error;
                             }
-                            loop_filter_ref_deltas[i] = loop_filter_ref_delta_result.value;
+                            loopFilterRefDeltas[i] = loopFilterRefDeltaResult.value;
                         }
                     }
 
                     for (uint8_t i = 0; i < 2; ++i)
                     {
-                        Result<bool> update_mode_delta_result = br.read_bool();
-                        if (update_mode_delta_result.error)
+                        Result<bool> updateModeDeltaResult = br.readBool();
+                        if (updateModeDeltaResult.error)
                         {
-                            return update_mode_delta_result.error;
+                            return updateModeDeltaResult.error;
                         }
 
-                        if (update_mode_delta_result.value)
+                        if (updateModeDeltaResult.value)
                         {
-                            Result<int8_t> loop_filter_mode_delta_result = br.read_inverse_i8(6);
-                            if (loop_filter_mode_delta_result.error)
+                            Result<int8_t> loopFilterModeDeltaResult = br.readInverseI8(6);
+                            if (loopFilterModeDeltaResult.error)
                             {
-                                return loop_filter_mode_delta_result.error;
+                                return loopFilterModeDeltaResult.error;
                             }
-                            loop_filter_mode_deltas[i] = loop_filter_mode_delta_result.value;
+                            loopFilterModeDeltas[i] = loopFilterModeDeltaResult.value;
                         }
                     }
                 }
@@ -1784,61 +1265,61 @@ class VP9FrameHeaderParser
             return OK;
         }
 
-        ERROR quantization_params(BitReader &br)
+        ERROR quantizationParams(BitReader &br)
         {
-            Result<uint8_t> base_q_idx_result = br.read_u8(8);
-            if (base_q_idx_result.error)
+            Result<uint8_t> baseQIdxResult = br.readU8(8);
+            if (baseQIdxResult.error)
             {
-                return base_q_idx_result.error;
+                return baseQIdxResult.error;
             }
-            this->base_q_idx = base_q_idx_result.value;
+            this->baseQIdx = baseQIdxResult.value;
 
-            Result<int32_t> delta_q_y_dc_result = read_delta_q(br);
-            if (delta_q_y_dc_result.error)
+            Result<int32_t> deltaQYDcResult = readDeltaQ(br);
+            if (deltaQYDcResult.error)
             {
-                return delta_q_y_dc_result.error;
+                return deltaQYDcResult.error;
             }
-            this->delta_q_y_dc = delta_q_y_dc_result.value;
+            this->deltaQYDc = deltaQYDcResult.value;
 
-            Result<int32_t> delta_q_uv_dc_result = read_delta_q(br);
-            if (delta_q_uv_dc_result.error)
+            Result<int32_t> deltaQUvDcResult = readDeltaQ(br);
+            if (deltaQUvDcResult.error)
             {
-                return delta_q_uv_dc_result.error;
+                return deltaQUvDcResult.error;
             }
-            this->delta_q_uv_dc = delta_q_uv_dc_result.value;
+            this->deltaQUvDc = deltaQUvDcResult.value;
 
-            Result<int32_t> delta_q_uv_ac_result = read_delta_q(br);
-            if (delta_q_uv_ac_result.error)
+            Result<int32_t> deltaQUvAcResult = readDeltaQ(br);
+            if (deltaQUvAcResult.error)
             {
-                return delta_q_uv_ac_result.error;
+                return deltaQUvAcResult.error;
             }
-            this->delta_q_uv_ac = delta_q_uv_ac_result.value;
+            this->deltaQUvAc = deltaQUvAcResult.value;
 
-            this->lossless = (this->base_q_idx == 0)
-                && (this->delta_q_y_dc == 0)
-                && (this->delta_q_uv_dc == 0)
-                && (this->delta_q_uv_ac == 0);
+            this->lossless = (this->baseQIdx == 0)
+                && (this->deltaQYDc == 0)
+                && (this->deltaQUvDc == 0)
+                && (this->deltaQUvAc == 0);
 
             return OK;
         }
 
-        Result<int32_t> read_delta_q(BitReader &br)
+        Result<int32_t> readDeltaQ(BitReader &br)
         {
-            Result<bool> delta_coded_result = br.read_bool();
-            if (delta_coded_result.error)
+            Result<bool> deltaCodedResult = br.readBool();
+            if (deltaCodedResult.error)
             {
-                return { delta_coded_result.error };
+                return { deltaCodedResult.error };
             }
 
-            if (delta_coded_result.value)
+            if (deltaCodedResult.value)
             {
-                Result<int8_t> delta_q_result = br.read_inverse_i8(4);
-                if (delta_q_result.error)
+                Result<int8_t> deltaQResult = br.readInverseI8(4);
+                if (deltaQResult.error)
                 {
-                    return { delta_q_result.error };
+                    return { deltaQResult.error };
                 }
 
-                return { OK, delta_q_result.value };
+                return { OK, deltaQResult.value };
             }
             else
             {
@@ -1846,138 +1327,138 @@ class VP9FrameHeaderParser
             }
         }
 
-        ERROR segmentation_params(BitReader &br)
+        ERROR segmentationParams(BitReader &br)
         {
-            Result<bool> segmentation_enabled_result = br.read_bool();
-            if (segmentation_enabled_result.error)
+            Result<bool> segmentationEnabledResult = br.readBool();
+            if (segmentationEnabledResult.error)
             {
-                return segmentation_enabled_result.error;
+                return segmentationEnabledResult.error;
             }
-            this->segmentation_enabled = segmentation_enabled_result.value;
+            this->segmentationEnabled = segmentationEnabledResult.value;
 
-            if (this->segmentation_enabled)
+            if (this->segmentationEnabled)
             {
-                Result<bool> segmentation_update_map_result = br.read_bool();
-                if (segmentation_update_map_result.error)
+                Result<bool> segmentationUpdateMapResult = br.readBool();
+                if (segmentationUpdateMapResult.error)
                 {
-                    return segmentation_update_map_result.error;
+                    return segmentationUpdateMapResult.error;
                 }
-                this->segmentation_update_map = segmentation_update_map_result.value;
+                this->segmentationUpdateMap = segmentationUpdateMapResult.value;
 
-                if (this->segmentation_update_map)
+                if (this->segmentationUpdateMap)
                 {
                     for (uint8_t i = 0; i < 7; ++i)
                     {
-                        Result<uint8_t> segment_tree_prob_result = read_prob(br);
-                        if (segment_tree_prob_result.error)
+                        Result<uint8_t> segmentTreeProbResult = readProb(br);
+                        if (segmentTreeProbResult.error)
                         {
-                            return segment_tree_prob_result.error;
+                            return segmentTreeProbResult.error;
                         }
 
-                        this->segment_tree_probs[i] = segment_tree_prob_result.value;
+                        this->segmentTreeProbs[i] = segmentTreeProbResult.value;
                     }
 
-                    Result<bool> segmentation_temporal_update_result = br.read_bool();
-                    if (segmentation_temporal_update_result.error)
+                    Result<bool> segmentationTemporalUpdateResult = br.readBool();
+                    if (segmentationTemporalUpdateResult.error)
                     {
-                        return segmentation_temporal_update_result.error;
+                        return segmentationTemporalUpdateResult.error;
                     }
-                    this->segmentation_temporal_update = segmentation_temporal_update_result.value;
+                    this->segmentationTemporalUpdate = segmentationTemporalUpdateResult.value;
 
                     for (uint8_t i = 0; i < 3; ++i)
                     {
-                        if (this->segmentation_temporal_update)
+                        if (this->segmentationTemporalUpdate)
                         {
-                            Result<uint8_t> segment_pred_prob_result = read_prob(br);
-                            if (segment_pred_prob_result.error)
+                            Result<uint8_t> segmentPredProbResult = readProb(br);
+                            if (segmentPredProbResult.error)
                             {
-                                return segment_pred_prob_result.error;
+                                return segmentPredProbResult.error;
                             }
 
-                            this->segment_pred_probs[i] = segment_pred_prob_result.value;
+                            this->segmentPredProbs[i] = segmentPredProbResult.value;
                         }
                         else
                         {
-                            this->segment_pred_probs[i] = 255;
+                            this->segmentPredProbs[i] = 255;
                         }
                     }
                 }
 
-                Result<bool> segmentation_update_data_result = br.read_bool();
-                if (segmentation_update_data_result.error)
+                Result<bool> segmentationUpdateDataResult = br.readBool();
+                if (segmentationUpdateDataResult.error)
                 {
-                    return segmentation_update_data_result.error;
+                    return segmentationUpdateDataResult.error;
                 }
-                this->segmentation_update_data = segmentation_update_data_result.value;
+                this->segmentationUpdateData = segmentationUpdateDataResult.value;
 
-                if (this->segmentation_update_data)
+                if (this->segmentationUpdateData)
                 {
-                    Result<bool> segmentation_abs_or_delta_update_result = br.read_bool();
-                    if (segmentation_abs_or_delta_update_result.error)
+                    Result<bool> segmentationAbsOrDeltaUpdateResult = br.readBool();
+                    if (segmentationAbsOrDeltaUpdateResult.error)
                     {
-                        return segmentation_abs_or_delta_update_result.error;
+                        return segmentationAbsOrDeltaUpdateResult.error;
                     }
-                    this->segmentation_abs_or_delta_update = segmentation_abs_or_delta_update_result.value;
+                    this->segmentationAbsOrDeltaUpdate = segmentationAbsOrDeltaUpdateResult.value;
 
                     for (uint8_t i = 0; i < MAX_SEGMENTS; ++i)
                     {
-                        Result<bool> segment_feature_enabled_alt_q_result = br.read_bool();
-                        if (segment_feature_enabled_alt_q_result.error)
+                        Result<bool> segmentFeatureEnabledAltQResult = br.readBool();
+                        if (segmentFeatureEnabledAltQResult.error)
                         {
-                            return segment_feature_enabled_alt_q_result.error;
+                            return segmentFeatureEnabledAltQResult.error;
                         }
-                        this->segment_feature_enabled[i][SEG_LVL_ALT_Q] = segment_feature_enabled_alt_q_result.value;
+                        this->segmentFeatureEnabled[i][SEG_LVL_ALT_Q] = segmentFeatureEnabledAltQResult.value;
 
-                        if (this->segment_feature_enabled[i][SEG_LVL_ALT_Q])
+                        if (this->segmentFeatureEnabled[i][SEG_LVL_ALT_Q])
                         {
-                            Result<int16_t> segment_feature_data_alt_q_result = br.read_inverse_i16(8);
-                            if (segment_feature_data_alt_q_result.error)
+                            Result<int16_t> segmentFeatureDataAltQResult = br.readInverseI16(8);
+                            if (segmentFeatureDataAltQResult.error)
                             {
-                                return segment_feature_data_alt_q_result.error;
+                                return segmentFeatureDataAltQResult.error;
                             }
-                            this->segment_feature_data[i][SEG_LVL_ALT_Q] = segment_feature_data_alt_q_result.value;
+                            this->segmentFeatureData[i][SEG_LVL_ALT_Q] = segmentFeatureDataAltQResult.value;
                         };
 
-                        Result<bool> segment_feature_enabled_alt_l_result = br.read_bool();
-                        if (segment_feature_enabled_alt_l_result.error)
+                        Result<bool> segmentFeatureEnabledAltLResult = br.readBool();
+                        if (segmentFeatureEnabledAltLResult.error)
                         {
-                            return segment_feature_enabled_alt_l_result.error;
+                            return segmentFeatureEnabledAltLResult.error;
                         }
-                        this->segment_feature_enabled[i][SEG_LVL_ALT_L] = segment_feature_enabled_alt_l_result.value;
+                        this->segmentFeatureEnabled[i][SEG_LVL_ALT_L] = segmentFeatureEnabledAltLResult.value;
 
-                        if (this->segment_feature_enabled[i][SEG_LVL_ALT_L])
+                        if (this->segmentFeatureEnabled[i][SEG_LVL_ALT_L])
                         {
-                            Result<int16_t> segment_feature_data_alt_l_result = br.read_inverse_i16(6);
-                            if (segment_feature_data_alt_l_result.error)
+                            Result<int16_t> segmentFeatureDataAltLResult = br.readInverseI16(6);
+                            if (segmentFeatureDataAltLResult.error)
                             {
-                                return segment_feature_data_alt_l_result.error;
+                                return segmentFeatureDataAltLResult.error;
                             }
-                            this->segment_feature_data[i][SEG_LVL_ALT_L] = segment_feature_data_alt_l_result.value;
+                            this->segmentFeatureData[i][SEG_LVL_ALT_L] = segmentFeatureDataAltLResult.value;
                         };
 
-                        Result<bool> segment_feature_enabled_ref_frame_result = br.read_bool();
-                        if (segment_feature_enabled_ref_frame_result.error)
+                        Result<bool> segmentFeatureEnabledRefFrameResult = br.readBool();
+                        if (segmentFeatureEnabledRefFrameResult.error)
                         {
-                            return segment_feature_enabled_ref_frame_result.error;
+                            return segmentFeatureEnabledRefFrameResult.error;
                         }
-                        this->segment_feature_enabled[i][SEG_LVL_REF_FRAME] = segment_feature_enabled_ref_frame_result.value;
+                        this->segmentFeatureEnabled[i][SEG_LVL_REF_FRAME] = segmentFeatureEnabledRefFrameResult.value;
 
-                        if (this->segment_feature_enabled[i][SEG_LVL_REF_FRAME])
+                        if (this->segmentFeatureEnabled[i][SEG_LVL_REF_FRAME])
                         {
-                            Result<int16_t> segment_feature_data_ref_frame_result = br.read_inverse_i16(6);
-                            if (segment_feature_data_ref_frame_result.error)
+                            Result<int16_t> segmentFeatureDataRefFrameResult = br.readInverseI16(6);
+                            if (segmentFeatureDataRefFrameResult.error)
                             {
-                                return segment_feature_data_ref_frame_result.error;
+                                return segmentFeatureDataRefFrameResult.error;
                             }
-                            this->segment_feature_data[i][SEG_LVL_REF_FRAME] = segment_feature_data_ref_frame_result.value;
+                            this->segmentFeatureData[i][SEG_LVL_REF_FRAME] = segmentFeatureDataRefFrameResult.value;
                         };
 
-                        Result<bool> segment_feature_enabled_skip_result = br.read_bool();
-                        if (segment_feature_enabled_skip_result.error)
+                        Result<bool> segmentFeatureEnabledSkipResult = br.readBool();
+                        if (segmentFeatureEnabledSkipResult.error)
                         {
-                            return segment_feature_enabled_skip_result.error;
+                            return segmentFeatureEnabledSkipResult.error;
                         }
-                        this->segment_feature_data[i][SEG_LVL_SKIP] = 0;
+                        this->segmentFeatureData[i][SEG_LVL_SKIP] = 0;
                     }
                 }
             }
@@ -1985,23 +1466,23 @@ class VP9FrameHeaderParser
             return OK;
         }
 
-        Result<uint8_t> read_prob(BitReader &br)
+        Result<uint8_t> readProb(BitReader &br)
         {
-            Result<bool> prob_coded_result = br.read_bool();
-            if (prob_coded_result.error)
+            Result<bool> probCodedResult = br.readBool();
+            if (probCodedResult.error)
             {
-                return { prob_coded_result.error };
+                return { probCodedResult.error };
             }
 
-            if (prob_coded_result.value)
+            if (probCodedResult.value)
             {
-                Result<uint8_t> prob_result = br.read_u8(8);
-                if (prob_result.error)
+                Result<uint8_t> probResult = br.readU8(8);
+                if (probResult.error)
                 {
-                    return { prob_result.error };
+                    return { probResult.error };
                 }
 
-                return { OK, prob_result.value };
+                return { OK, probResult.value };
             }
             else
             {
@@ -2009,31 +1490,31 @@ class VP9FrameHeaderParser
             }
         }
 
-        ERROR tile_info(BitReader &br)
+        ERROR tileInfo(BitReader &br)
         {
-            Result<uint8_t> min_log2_tile_cols_result = calc_min_log2_tile_cols();
-            if (min_log2_tile_cols_result.error)
+            Result<uint8_t> minLog2TileColsResult = calcMinLog2TileCols();
+            if (minLog2TileColsResult.error)
             {
-                return min_log2_tile_cols_result.error;
+                return minLog2TileColsResult.error;
             }
-            Result<uint8_t> max_log2_tile_cols_result = calc_max_log2_tile_cols();
-            if (max_log2_tile_cols_result.error)
+            Result<uint8_t> maxLog2TileColsResult = calcMaxLog2TileCols();
+            if (maxLog2TileColsResult.error)
             {
-                return max_log2_tile_cols_result.error;
+                return maxLog2TileColsResult.error;
             }
 
-            this->tile_cols_log2 = min_log2_tile_cols_result.value;
-            while (this->tile_cols_log2 < max_log2_tile_cols_result.value)
+            this->tileColsLog2 = minLog2TileColsResult.value;
+            while (this->tileColsLog2 < maxLog2TileColsResult.value)
             {
-                Result<bool> increment_tile_cols_log2_result = br.read_bool();
-                if (increment_tile_cols_log2_result.error)
+                Result<bool> incrementTileColsLog2Result = br.readBool();
+                if (incrementTileColsLog2Result.error)
                 {
-                    return increment_tile_cols_log2_result.error;
+                    return incrementTileColsLog2Result.error;
                 }
 
-                if (increment_tile_cols_log2_result.value)
+                if (incrementTileColsLog2Result.value)
                 {
-                    this->tile_cols_log2 += 1;
+                    this->tileColsLog2 += 1;
                 }
                 else
                 {
@@ -2041,73 +1522,73 @@ class VP9FrameHeaderParser
                 }
             }
 
-            Result<uint8_t> tile_rows_log2_result = br.read_u8(1);
-            if (tile_rows_log2_result.error)
+            Result<uint8_t> tileRowsLog2Result = br.readU8(1);
+            if (tileRowsLog2Result.error)
             {
-                return tile_rows_log2_result.error;
+                return tileRowsLog2Result.error;
             }
 
-            this->tile_rows_log2 = tile_rows_log2_result.value;
-            if (this->tile_rows_log2 == 1)
+            this->tileRowsLog2 = tileRowsLog2Result.value;
+            if (this->tileRowsLog2 == 1)
             {
-                Result<uint8_t> increment_tile_rows_log2_result = br.read_u8(1);
-                if (increment_tile_rows_log2_result.error)
+                Result<uint8_t> incrementTileRowsLog2Result = br.readU8(1);
+                if (incrementTileRowsLog2Result.error)
                 {
-                    return increment_tile_rows_log2_result.error;
+                    return incrementTileRowsLog2Result.error;
                 }
 
-                this->tile_rows_log2 += increment_tile_rows_log2_result.value;
+                this->tileRowsLog2 += incrementTileRowsLog2Result.value;
             }
 
             return OK;
         }
 
-        Result<uint8_t> calc_min_log2_tile_cols()
+        Result<uint8_t> calcMinLog2TileCols()
         {
-            uint16_t sb64_cols_u16 = (this->mi_cols + 7) >> 3;
-            if (sb64_cols_u16 > UINT8_MAX)
+            uint16_t sb64ColsU16 = (this->miCols + 7) >> 3;
+            if (sb64ColsU16 > UINT8_MAX)
             {
                 return { ERROR_FAIL };
             }
-            uint8_t sb64_cols = static_cast<uint8_t>(sb64_cols_u16);
+            uint8_t sb64Cols = static_cast<uint8_t>(sb64ColsU16);
 
-            uint8_t min_log2 = 0;
-            while ((MAX_TILE_WIDTH_B64 << min_log2) < sb64_cols)
+            uint8_t minLog2 = 0;
+            while ((MAX_TILE_WIDTH_B64 << minLog2) < sb64Cols)
             {
-                min_log2 += 1;
+                minLog2 += 1;
             }
 
-            return { OK, min_log2 };
+            return { OK, minLog2 };
         }
 
-        Result<uint8_t> calc_max_log2_tile_cols()
+        Result<uint8_t> calcMaxLog2TileCols()
         {
-            uint16_t sb64_cols_u16 = (this->mi_cols + 7) >> 3;
-            if (sb64_cols_u16 > UINT8_MAX)
+            uint16_t sb64ColsU16 = (this->miCols + 7) >> 3;
+            if (sb64ColsU16 > UINT8_MAX)
             {
                 return { ERROR_FAIL };
             }
-            uint8_t sb64_cols = static_cast<uint8_t>(sb64_cols_u16);
+            uint8_t sb64Cols = static_cast<uint8_t>(sb64ColsU16);
 
-            uint8_t max_log2 = 1;
-            while ((sb64_cols >> max_log2) >= MIN_TILE_WIDTH_B64)
+            uint8_t maxLog2 = 1;
+            while ((sb64Cols >> maxLog2) >= MIN_TILE_WIDTH_B64)
             {
-                max_log2 += 1;
+                maxLog2 += 1;
             }
-            return { OK, static_cast<uint8_t>(max_log2 - 1) };
+            return { OK, static_cast<uint8_t>(maxLog2 - 1) };
         }
 
-        ERROR trailing_bits(BitReader &br)
+        ERROR trailingBits(BitReader &br)
         {
-            while (br.is_aligned(1))
+            while (br.isAligned(1))
             {
-                Result<bool> zero_bit_result = br.read_bool();
-                if (zero_bit_result.error)
+                Result<bool> zeroBitResult = br.readBool();
+                if (zeroBitResult.error)
                 {
-                    return zero_bit_result.error;
+                    return zeroBitResult.error;
                 }
 
-                if (zero_bit_result.value)
+                if (zeroBitResult.value)
                 {
                     return ERROR_INVALID_PADDING;
                 }
@@ -2116,7 +1597,7 @@ class VP9FrameHeaderParser
             return OK;
         }
 
-        static constexpr uint32_t u32_from_le_bytes(const uint8_t *bytes)
+        static constexpr uint32_t u32FromLeBytes(const uint8_t *bytes)
         {
             return static_cast<uint32_t>(bytes[0])
                 | (static_cast<uint32_t>(bytes[1]) << 8)
@@ -2124,13 +1605,13 @@ class VP9FrameHeaderParser
                 | (static_cast<uint32_t>(bytes[3]) << 24);
         }
 
-        static constexpr uint16_t u16_from_le_bytes(const uint8_t *bytes)
+        static constexpr uint16_t u16FromLeBytes(const uint8_t *bytes)
         {
             return static_cast<uint16_t>(bytes[0])
                 | (static_cast<uint16_t>(bytes[1]) << 8);
         }
 
-        static constexpr uint8_t u8_from_le_bytes(const uint8_t *bytes)
+        static constexpr uint8_t u8FromLeBytes(const uint8_t *bytes)
         {
             return bytes[0];
         }
