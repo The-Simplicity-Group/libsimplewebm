@@ -107,6 +107,14 @@ class VP9FrameHeaderParser
         size_t len = 0;
     };
 
+    /// Equivalent for Rust's Result type.
+    template<typename T>
+    struct Result
+    {
+        ERROR error = OK;
+        T value = {};
+    };
+
     /// Equivalent for Rust's BitReader type.
     struct BitReader
     {
@@ -121,46 +129,51 @@ class VP9FrameHeaderParser
         }
 
         template <typename T>
-        ERROR read_unsigned(uint8_t count, T &result)
+        Result<T> read_unsigned(uint8_t count)
         {
             if (count > (sizeof(T) * 8) || count > get_remaining_bits())
             {
-                return ERROR_BIT_READER;
+                return { ERROR_BIT_READER };
             }
 
             Result<uint64_t> result = read_u64(count);
             if (result.error)
             {
-                return result.error;
+                return { result.error };
             }
 
-            result = static_cast<T>(result.value);
-            return OK;
+            return { OK, static_cast<T>(result.value) };
         }
 
-        ERROR read_u64(uint8_t count, uint64_t &result)
+        Result<uint64_t> read_u64(uint8_t count)
         {
-            return read_unsigned(count, result);
+            return read_unsigned<uint64_t>(count);
         }
 
-        ERROR read_u32(uint8_t count, uint32_t &result)
+        Result<uint32_t> read_u32(uint8_t count)
         {
-            return read_unsigned(count, result);
+            return read_unsigned<uint32_t>(count);
         }
 
-        ERROR read_u16(uint8_t count, uint16_t &result)
+        Result<uint16_t> read_u16(uint8_t count)
         {
-            return read_unsigned(count, result);
+            return read_unsigned<uint16_t>(count);
         }
 
-        ERROR read_u8(uint8_t count, uint8_t &result)
+        Result<uint8_t> read_u8(uint8_t count)
         {
-            return read_unsigned(count, result);
+            return read_unsigned<uint8_t>(count);
         }
 
-        ERROR read_bool(bool &result)
+        Result<bool> read_bool()
         {
-            return read_unsigned(1, result);
+            Result<uint8_t> result = read_u8(1);
+            if (result.error)
+            {
+                return { result.error };
+            }
+
+            return { OK, result.value != 0 };
         }
 
         size_t get_remaining_bits() const
@@ -521,8 +534,10 @@ class VP9FrameHeaderParser
         METADATA_SUBSAMPLING chroma_subsampling;
 
         /// Creates the Vp9Metadata from the given `CodecPrivate` data.
-        static ERROR create(Slice<uint8_t> data, Metadata &metadata)
+        static Result<Metadata> create(Slice<uint8_t> data)
         {
+            Metadata metadata;
+
             bool has_profile = false;
             bool has_level = false;
             bool has_color_depth = false;
@@ -534,7 +549,7 @@ class VP9FrameHeaderParser
             {
                 if (pos + 1 >= data.len)
                 {
-                    return ERROR_INVALID_METADATA;
+                    return { ERROR_INVALID_METADATA };
                 }
 
                 uint8_t id = data.ptr[pos];
@@ -564,10 +579,10 @@ class VP9FrameHeaderParser
 
             if (!has_profile || !has_level || !has_color_depth || !has_chroma_subsampling)
             {
-                return ERROR_INVALID_METADATA;
+                return { ERROR_INVALID_METADATA };
             }
 
-            return OK;
+            return { OK, metadata };
         }
     };
 
@@ -895,11 +910,11 @@ class VP9FrameHeaderParser
         /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
         /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
         /// parser in such cases results in garbage data or errors.
-        ERROR parse_packet(std::vector<uint8_t> packet, std::vector<Frame> &frames)
+        Result<std::vector<Frame>> parse_packet(std::vector<uint8_t> packet)
         {
             if (packet.empty())
             {
-                return OK;
+                return { OK, {} };
             }
 
             // Test for a super frame.
@@ -918,6 +933,7 @@ class VP9FrameHeaderParser
                 // Found a super frame.
                 if (first_byte == last_byte)
                 {
+                    std::vector<Frame> frames = {};
                     frames.reserve(frame_count);
 
                     size_t index_start = first_byte_index + 1;
@@ -932,22 +948,20 @@ class VP9FrameHeaderParser
                         case 1:
                         {
                             // Odd, but valid bitstream configuration.
-                            size_t frame_size;
-                            ERROR frame_size_error = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0, frame_size);
-                            if (frame_size_error)
+                            Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0);
+                            if (frame_size.error)
                             {
-                                return frame_size_error;
+                                return { frame_size.error };
                             }
 
-                            packet.resize(frame_size);
-                            Frame frame;
-                            ERROR frame_error = parse_frame(packet, frame);
-                            if (frame_error)
+                            packet.resize(frame_size.value);
+                            Result<Frame> frame = parse_frame(packet);
+                            if (frame.error)
                             {
-                                return frame_error;
+                                return { frame.error };
                             }
 
-                            frames.push_back(frame);
+                            frames.push_back(frame.value);
                             break;
                         }
                         case 2:
@@ -955,37 +969,33 @@ class VP9FrameHeaderParser
                             // Most common case. The first frame produces a frame that is not displayed but
                             // stored as a reference frame. The second frame is mostly empty and references
                             // the previously stored frame.
-                            size_t first_frame_size;
-                            ERROR first_frame_size_error = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0, first_frame_size);
-                            if (first_frame_size_error)
+                            Result<size_t> first_frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 0);
+                            if (first_frame_size.error)
                             {
-                                return first_frame_size_error;
+                                return { first_frame_size.error };
                             }
-                            std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + first_frame_size, packet.end());
-                            packet.resize(first_frame_size);
-                            Frame first_frame;
-                            ERROR first_frame_error = parse_frame(packet, first_frame);
-                            if (first_frame_error)
+                            std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + first_frame_size.value, packet.end());
+                            packet.resize(first_frame_size.value);
+                            Result<Frame> first_frame = parse_frame(packet);
+                            if (first_frame.error)
                             {
-                                return first_frame_error;
+                                return { first_frame.error };
                             }
 
-                            size_t second_frame_size;
-                            ERROR second_frame_size_error = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 1, second_frame_size);
-                            if (second_frame_size_error)
+                            Result<size_t> second_frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, 1);
+                            if (second_frame_size.error)
                             {
-                                return second_frame_size_error;
+                                return { second_frame_size.error };
                             }
-                            left_over.resize(second_frame_size);
-                            Frame second_frame;
-                            ERROR second_frame_error = parse_frame(left_over, second_frame);
-                            if (second_frame_error)
+                            left_over.resize(second_frame_size.value);
+                            Result<Frame> second_frame = parse_frame(left_over);
+                            if (second_frame.error)
                             {
-                                return second_frame_error;
+                                return { second_frame.error };
                             }
 
-                            frames.push_back(first_frame);
-                            frames.push_back(second_frame);
+                            frames.push_back(first_frame.value);
+                            frames.push_back(second_frame.value);
                             break;
                         }
                         default:
@@ -993,22 +1003,20 @@ class VP9FrameHeaderParser
                             // Odd, but also a valid bitstream configuration.
                             for (size_t frame_index = 0; frame_index < frame_count; frame_index++)
                             {
-                                size_t frame_size;
-                                ERROR frame_size_error = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, frame_index, frame_size);
-                                if (frame_size_error)
+                                Result<size_t> frame_size = read_frame_size({ entry_data.data(), entry_data.size() }, bytes_size, frame_index);
+                                if (frame_size.error)
                                 {
-                                    return frame_size_error;
+                                    return { frame_size.error };
                                 }
 
-                                std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + frame_size, packet.end());
-                                packet.resize(frame_size);
-                                Frame frame;
-                                ERROR frame_error = parse_frame(packet, frame);
-                                if (frame_error)
+                                std::vector<uint8_t> left_over = std::vector<uint8_t>(packet.begin() + frame_size.value, packet.end());
+                                packet.resize(frame_size.value);
+                                Result<Frame> frame = parse_frame(packet);
+                                if (frame.error)
                                 {
-                                    return frame_error;
+                                    return { frame.error };
                                 }
-                                frames.push_back(frame);
+                                frames.push_back(frame.value);
 
                                 packet = left_over;
                             }
@@ -1016,23 +1024,21 @@ class VP9FrameHeaderParser
                         }
                     }
 
-                    return OK;
+                    return { OK, frames };
                 }
             }
 
             // Normal frame.
-            Frame frame;
-            ERROR frame_error = parse_frame(packet, frame);
-            if (frame_error)
+            Result<Frame> frame = parse_frame(packet);
+            if (frame.error)
             {
-                return frame_error;
+                return { frame.error };
             }
-            frames.push_back(frame);
-            return OK;
+            return { OK, { frame.value } };
         }
 
     private:
-        ERROR read_frame_size(MutableSlice<uint8_t> entry_data, size_t bytes_size, size_t index, size_t &frame_size)
+        Result<size_t> read_frame_size(MutableSlice<uint8_t> entry_data, size_t bytes_size, size_t index)
         {
             // sic! Even though the values inside the uncompressed header are saved in BE,
             // these values are saved in LE.
@@ -1040,90 +1046,82 @@ class VP9FrameHeaderParser
             {
                 case 1:
                 {
-                    frame_size = u8_from_le_bytes(entry_data.ptr + index);
-                    return OK;
+                    return { OK, u8_from_le_bytes(entry_data.ptr + index) };
                 }
                 case 2:
                 {
-                    frame_size = u16_from_le_bytes(entry_data.ptr + (index * 2));
-                    return OK;
+                    return { OK, u16_from_le_bytes(entry_data.ptr + (index * 2)) };
                 }
                 case 3:
                 {
                     uint8_t *three_bytes = entry_data.ptr + (index * 3);
                     uint8_t four_bytes[4] = { three_bytes[0], three_bytes[1], three_bytes[2], 0 };
-                    frame_size = u32_from_le_bytes(four_bytes);
-                    return OK;
+                    return { OK, u32_from_le_bytes(four_bytes) };
                 }
                 case 4:
                 {
-                    frame_size = u32_from_le_bytes(entry_data.ptr + (index * 4));
-                    return OK;
+                    return { OK, u32_from_le_bytes(entry_data.ptr + (index * 4)) };
                 }
                 default:
                 {
-                    return ERROR_INVALID_FRAME_SIZE_BYTE_SIZE;
+                    return { ERROR_INVALID_FRAME_SIZE_BYTE_SIZE };
                 }
             };
         }
 
-        ERROR parse_frame(std::vector<uint8_t> data, Frame &frame)
+        Result<Frame> parse_frame(std::vector<uint8_t> data)
         {
             BitReader br = BitReader({ data.data(), data.size() });
 
-            uint8_t frame_marker;
-            ERROR frame_marker_error = br.read_u8(2, frame_marker);
-            if (frame_marker_error)
+            Result<uint8_t> frame_marker = br.read_u8(2);
+            if (frame_marker.error)
             {
-                return frame_marker_error;
+                return { frame_marker.error };
             }
-            if (frame_marker != 2) {
-                return ERROR_INVALID_FRAME_MARKER;
+            if (frame_marker.value != 2) {
+                return { ERROR_INVALID_FRAME_MARKER };
             }
 
-            uint8_t profile_low_bit;
-            ERROR profile_low_bit_error = br.read_u8(1, profile_low_bit);
-            if (profile_low_bit_error)
+            Result<uint8_t> profile_low_bit = br.read_u8(1);
+            if (profile_low_bit.error)
             {
-                return profile_low_bit_error;
+                return { profile_low_bit.error };
             }
-            uint8_t profile_high_bit;
-            ERROR profile_high_bit_error = br.read_u8(1, profile_high_bit);
-            if (profile_high_bit_error)
+            Result<uint8_t> profile_high_bit = br.read_u8(1);
+            if (profile_high_bit.error)
             {
-                return profile_high_bit_error;
+                return { profile_high_bit.error };
             }
-            this->profile = int_to_profile((profile_high_bit << 1) + profile_low_bit);
+            this->profile = int_to_profile((profile_high_bit.value << 1) + profile_low_bit.value);
             if (this->profile == PROFILE_3)
             {
-                uint8_t reserved_zero;
-                ERROR reserved_zero_error = br.read_u8(1, reserved_zero);
-                if (reserved_zero_error)
+                Result<uint8_t> _reserved_zero = br.read_u8(1);
+                if (_reserved_zero.error)
                 {
-                    return reserved_zero_error;
+                    return { _reserved_zero.error };
                 }
             }
 
-            ERROR show_existing_frame_error = br.read_bool(this->show_existing_frame);
-            if (show_existing_frame_error)
+            Result<bool> show_existing_frame_result = br.read_bool();
+            if (show_existing_frame_result.error)
             {
-                return show_existing_frame_error;
+                return { show_existing_frame_result.error };
             }
+            this->show_existing_frame = show_existing_frame_result.value;
 
             if (this->show_existing_frame)
             {
-                uint8_t frame_to_show_map_idx_value;
-                ERROR frame_to_show_map_idx_error = br.read_u8(3, frame_to_show_map_idx_value);
-                if (frame_to_show_map_idx_error)
+                Result<uint8_t> frame_to_show_map_idx_result = br.read_u8(3);
+                if (frame_to_show_map_idx_result.error)
                 {
-                    return frame_to_show_map_idx_error;
+                    return { frame_to_show_map_idx_result.error };
                 }
-                this->frame_to_show_map_idx = { true, frame_to_show_map_idx_value };
+                this->frame_to_show_map_idx = { true, frame_to_show_map_idx_result.value };
                 this->refresh_frame_flags = 0;
                 this->loop_filter_level = 0;
 
-                frame = Frame::create(*this, 0, 0, 0, {});
-                return OK;
+                Frame frame = Frame::create(*this, 0, 0, 0, {});
+                return { OK, frame };
             }
             else
             {
