@@ -145,7 +145,7 @@ Result<T> BitReader::readUnsigned(uint8_t count)
         ++this->positionInBits;
     }
 
-    return {OK, value};
+    return { OK, value };
 }
 
 template <typename T, typename U>
@@ -417,9 +417,9 @@ Frame Frame::create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t com
     frame.loopFilterLevel = parser.loopFilterLevel;
     frame.loopFilterSharpness = parser.loopFilterSharpness;
     frame.loopFilterDeltaEnabled = parser.loopFilterDeltaEnabled;
-    frame.updateRefDelta = parser.updateRefDelta;
+    frame.loopFilterUpdateRefDelta = parser.loopFilterUpdateRefDelta;
     memcpy(frame.loopFilterRefDeltas, parser.loopFilterRefDeltas, sizeof(parser.loopFilterRefDeltas));
-    frame.updateModeDelta = parser.updateModeDelta;
+    frame.loopFilterUpdateModeDelta = parser.loopFilterUpdateModeDelta;
     memcpy(frame.loopFilterModeDeltas, parser.loopFilterModeDeltas, sizeof(parser.loopFilterModeDeltas));
     frame.baseQIdx = parser.baseQIdx;
     frame.deltaQYDc = parser.deltaQYDc;
@@ -508,13 +508,19 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
     // Test for a super frame.
     size_t lastByteIndex = packet.size() - 1;
     uint8_t lastByte = packet[lastByteIndex];
-    if (lastByte & 0b1110'0000 == 0b1100'0000)
+    if ((lastByte & 0b1110'0000) == 0b1100'0000)
     {
         uint8_t bytesPerFramesizeMinus1 = (lastByte & 0b11000) >> 3;
         uint8_t framesInSuperframeMinus1 = lastByte & 0b111;
         size_t bytesSize = bytesPerFramesizeMinus1 + 1;
         size_t frameCount = framesInSuperframeMinus1 + 1;
         size_t indexSize = 2 + (frameCount * bytesSize);
+
+        if (packet.size() < indexSize)
+        {
+            return { ERROR_FAIL };
+        }
+
         size_t firstByteIndex = packet.size() - indexSize;
         uint8_t firstByte = packet[firstByteIndex];
 
@@ -536,13 +542,22 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                 case 1:
                 {
                     // Odd, but valid bitstream configuration.
-                    Result<size_t> frameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 0);
+                    Result<uint32_t> frameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 0);
                     if (frameSizeResult.error)
                     {
                         return { frameSizeResult.error };
                     }
+                    if (frameSizeResult.value != firstByteIndex)
+                    {
+                        return { ERROR_FAIL };
+                    }
 
-                    packet.resize(frameSizeResult.value);
+                    ERROR packetTruncateError = truncateVector(packet, frameSizeResult.value);
+                    if (packetTruncateError)
+                    {
+                        return { packetTruncateError };
+                    }
+
                     Result<Frame> frameResult = parseFrame(packet);
                     if (frameResult.error)
                     {
@@ -557,25 +572,43 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                     // Most common case. The first frame produces a frame that is not displayed but
                     // stored as a reference frame. The second frame is mostly empty and references
                     // the previously stored frame.
-                    Result<size_t> firstFrameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 0);
+                    Result<uint32_t> firstFrameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 0);
                     if (firstFrameSizeResult.error)
                     {
                         return { firstFrameSizeResult.error };
                     }
+                    Result<uint32_t> secondFrameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 1);
+                    if (secondFrameSizeResult.error)
+                    {
+                        return { secondFrameSizeResult.error };
+                    }
+                    if (firstFrameSizeResult.value > firstByteIndex || secondFrameSizeResult.value != (firstByteIndex - firstFrameSizeResult.value))
+                    {
+                        // (firstFrameSize + secondFrameSize) != firstByteIndex
+                        return { ERROR_FAIL };
+                    }
+
                     std::vector<uint8_t> leftOver = std::vector<uint8_t>(packet.begin() + firstFrameSizeResult.value, packet.end());
-                    packet.resize(firstFrameSizeResult.value);
+
+                    ERROR packetTruncateError = truncateVector(packet, firstFrameSizeResult.value);
+                    if (packetTruncateError)
+                    {
+                        return { packetTruncateError };
+                    }
+
                     Result<Frame> firstFrameResult = parseFrame(packet);
                     if (firstFrameResult.error)
                     {
                         return { firstFrameResult.error };
                     }
+                    
 
-                    Result<size_t> secondFrameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, 1);
-                    if (secondFrameSizeResult.error)
+                    ERROR leftOverTruncateError = truncateVector(leftOver, secondFrameSizeResult.value);
+                    if (leftOverTruncateError)
                     {
-                        return { secondFrameSizeResult.error };
+                        return { leftOverTruncateError };
                     }
-                    leftOver.resize(secondFrameSizeResult.value);
+
                     Result<Frame> secondFrameResult = parseFrame(leftOver);
                     if (secondFrameResult.error)
                     {
@@ -589,16 +622,28 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                 default:
                 {
                     // Odd, but also a valid bitstream configuration.
+                    size_t remainingFrameData = firstByteIndex;
                     for (size_t frameIndex = 0; frameIndex < frameCount; ++frameIndex)
                     {
-                        Result<size_t> frameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, frameIndex);
+                        Result<uint32_t> frameSizeResult = readFrameSize({ entryData.data(), entryData.size() }, bytesSize, frameIndex);
                         if (frameSizeResult.error)
                         {
                             return { frameSizeResult.error };
                         }
+                        if (frameSizeResult.value > remainingFrameData)
+                        {
+                            return { ERROR_FAIL };
+                        }
+                        remainingFrameData -= frameSizeResult.value;
 
                         std::vector<uint8_t> leftOver = std::vector<uint8_t>(packet.begin() + frameSizeResult.value, packet.end());
-                        packet.resize(frameSizeResult.value);
+
+                        ERROR packetTruncateError = truncateVector(packet, frameSizeResult.value);
+                        if (packetTruncateError)
+                        {
+                            return { packetTruncateError };
+                        }
+
                         Result<Frame> frameResult = parseFrame(packet);
                         if (frameResult.error)
                         {
@@ -607,6 +652,10 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
                         frames.push_back(frameResult.value);
 
                         packet = leftOver;
+                    }
+                    if (remainingFrameData != 0)
+                    {
+                        return { ERROR_FAIL };
                     }
                     break;
                 }
@@ -625,7 +674,7 @@ Result<std::vector<Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet)
     return { OK, { frameResult.value } };
 }
 
-Result<size_t> VP9Parser::readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index)
+Result<uint32_t> VP9Parser::readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index)
 {
     // sic! Even though the values inside the uncompressed header are saved in BE,
     // these values are saved in LE.
@@ -688,6 +737,10 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
         {
             return { reservedZeroResult.error };
         }
+        if (reservedZeroResult.value != 0)
+        {
+            return { ERROR_FAIL };
+        }
     }
 
     Result<bool> showExistingFrameResult = br.readBool();
@@ -741,6 +794,8 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
 
     if (this->frameType == FRAME_TYPE_KEY_FRAME)
     {
+        this->intraOnly = false;
+
         ERROR frameSyncCodeError = frameSyncCode(br);
         if (frameSyncCodeError)
         {
@@ -777,7 +832,7 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
         else
         {
             this->intraOnly = false;
-        };
+        }
 
         if (!this->errorResilientMode)
         {
@@ -791,7 +846,7 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
         else
         {
             this->resetFrameContext = RESET_FRAME_CONTEXT_NO_0;
-        };
+        }
 
         if (this->intraOnly)
         {
@@ -894,7 +949,7 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
     {
         this->refreshFrameContext = false;
         this->frameParallelDecodingMode = false;
-    };
+    }
 
     Result<uint8_t> frameContextIdxResult = br.readU8(2);
     if (frameContextIdxResult.error)
@@ -953,8 +1008,13 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
     }
     size_t uncompressedHeaderSize = br.positionInBits / 8;
 
-    size_t size = data.size();
-    size_t tileSize = size - (uncompressedHeaderSize + compressedHeaderSize);
+    if (data.size() < uncompressedHeaderSize || (data.size() - uncompressedHeaderSize) < compressedHeaderSize)
+    {
+        // data.size() < (uncompressedHeaderSize + compressedHeaderSize)
+        return { ERROR_FAIL };
+    }
+
+    size_t tileSize = data.size() - (uncompressedHeaderSize + compressedHeaderSize);
 
     Frame frame = Frame::create(
         *this,
@@ -972,8 +1032,8 @@ Result<Frame> VP9Parser::parseFrame(std::vector<uint8_t> data)
 void VP9Parser::refreshRefFrames()
 {
     uint8_t flags = this->refreshFrameFlags;
-    uint16_t newWidth = this->width;
-    uint16_t newHeight = this->height;
+    uint32_t newWidth = this->width;
+    uint32_t newHeight = this->height;
 
     for (size_t index = 0; index < 8; ++index)
     {
@@ -1002,7 +1062,7 @@ ERROR VP9Parser::frameSyncCode(BitReader &br)
         return frameSyncByte2Result.error;
     }
 
-    if (frameSyncByte0Result.value != 0x49 && frameSyncByte1Result.value != 0x83 && frameSyncByte2Result.value != 0x42)
+    if (frameSyncByte0Result.value != 0x49 || frameSyncByte1Result.value != 0x83 || frameSyncByte2Result.value != 0x42)
     {
         return ERROR_INVALID_SYNC_BYTE;
     }
@@ -1031,7 +1091,7 @@ ERROR VP9Parser::colorConfig(BitReader &br)
     else
     {
         this->colorDepth = COLOR_DEPTH_8;
-    };
+    }
 
     Result<uint8_t> colorSpaceResult = br.readU8(3);
     if (colorSpaceResult.error)
@@ -1047,10 +1107,15 @@ ERROR VP9Parser::colorConfig(BitReader &br)
         {
             this->subsamplingX = false;
             this->subsamplingY = false;
+
             Result<uint8_t> reservedZeroResult = br.readU8(1);
             if (reservedZeroResult.error)
             {
                 return reservedZeroResult.error;
+            }
+            if (reservedZeroResult.value != 0)
+            {
+                return { ERROR_FAIL };
             }
         }
     }
@@ -1070,16 +1135,22 @@ ERROR VP9Parser::colorConfig(BitReader &br)
                 return subsamplingXResult.error;
             }
             this->subsamplingX = subsamplingXResult.value;
+
             Result<bool> subsamplingYResult = br.readBool();
             if (subsamplingYResult.error)
             {
                 return subsamplingYResult.error;
             }
             this->subsamplingY = subsamplingYResult.value;
+
             Result<uint8_t> reservedZeroResult = br.readU8(1);
             if (reservedZeroResult.error)
             {
                 return reservedZeroResult.error;
+            }
+            if (reservedZeroResult.value != 0)
+            {
+                return { ERROR_FAIL };
             }
         }
         else
@@ -1104,6 +1175,7 @@ ERROR VP9Parser::frameSize(BitReader &br)
     {
         return frameHeightMinus1Result.error;
     }
+
     this->width = frameWidthMinus1Result.value + 1;
     this->height = frameHeightMinus1Result.value + 1;
 
@@ -1131,6 +1203,7 @@ ERROR VP9Parser::renderSize(BitReader &br)
         {
             return renderHeightMinus1Result.error;
         }
+
         this->renderWidth = renderWidthMinus1Result.value + 1;
         this->renderHeight = renderHeightMinus1Result.value + 1;
     }
@@ -1162,7 +1235,7 @@ ERROR VP9Parser::frameSizeWithRefs(BitReader &br)
             {
                 return ERROR_INVALID_REF_FRAME_INDEX;
             }
-            std::pair<uint16_t, uint16_t> sizes = this->refFrameSizes[refFrameIndex];
+            std::pair<uint32_t, uint32_t> sizes = this->refFrameSizes[refFrameIndex];
 
             this->width = sizes.first;
             this->height = sizes.second;
@@ -1263,6 +1336,9 @@ ERROR VP9Parser::loopFilterParams(BitReader &br)
     }
     this->loopFilterDeltaEnabled = loopFilterDeltaEnabledResult.value;
 
+    this->loopFilterUpdateRefDelta = false;
+    this->loopFilterUpdateModeDelta = false;
+
     if (this->loopFilterDeltaEnabled)
     {
         Result<bool> loopFilterDeltaUpdateResult = br.readBool();
@@ -1280,6 +1356,8 @@ ERROR VP9Parser::loopFilterParams(BitReader &br)
                 {
                     return updateRefDeltaResult.error;
                 }
+
+                this->loopFilterUpdateRefDelta |= updateRefDeltaResult.value;
 
                 if (updateRefDeltaResult.value)
                 {
@@ -1299,6 +1377,8 @@ ERROR VP9Parser::loopFilterParams(BitReader &br)
                 {
                     return updateModeDeltaResult.error;
                 }
+
+                this->loopFilterUpdateModeDelta |= updateModeDeltaResult.value;
 
                 if (updateModeDeltaResult.value)
                 {
@@ -1468,7 +1548,7 @@ ERROR VP9Parser::segmentationParams(BitReader &br)
                         return segmentFeatureDataAltQResult.error;
                     }
                     this->segmentFeatureData[i][SEG_LVL_ALT_Q] = segmentFeatureDataAltQResult.value;
-                };
+                }
 
                 Result<bool> segmentFeatureEnabledAltLResult = br.readBool();
                 if (segmentFeatureEnabledAltLResult.error)
@@ -1485,7 +1565,7 @@ ERROR VP9Parser::segmentationParams(BitReader &br)
                         return segmentFeatureDataAltLResult.error;
                     }
                     this->segmentFeatureData[i][SEG_LVL_ALT_L] = segmentFeatureDataAltLResult.value;
-                };
+                }
 
                 Result<bool> segmentFeatureEnabledRefFrameResult = br.readBool();
                 if (segmentFeatureEnabledRefFrameResult.error)
@@ -1502,13 +1582,15 @@ ERROR VP9Parser::segmentationParams(BitReader &br)
                         return segmentFeatureDataRefFrameResult.error;
                     }
                     this->segmentFeatureData[i][SEG_LVL_REF_FRAME] = segmentFeatureDataRefFrameResult.value;
-                };
+                }
 
                 Result<bool> segmentFeatureEnabledSkipResult = br.readBool();
                 if (segmentFeatureEnabledSkipResult.error)
                 {
                     return segmentFeatureEnabledSkipResult.error;
                 }
+                this->segmentFeatureEnabled[i][SEG_LVL_SKIP] = segmentFeatureEnabledSkipResult.value;
+
                 this->segmentFeatureData[i][SEG_LVL_SKIP] = 0;
             }
         }
@@ -1631,7 +1713,7 @@ Result<uint8_t> VP9Parser::calcMaxLog2TileCols()
 
 ERROR VP9Parser::trailingBits(BitReader &br)
 {
-    while (br.isAligned(1))
+    while (!br.isAligned(1))
     {
         Result<bool> zeroBitResult = br.readBool();
         if (zeroBitResult.error)
@@ -1665,4 +1747,16 @@ constexpr uint16_t VP9Parser::u16FromLeBytes(const uint8_t *bytes)
 constexpr uint8_t VP9Parser::u8FromLeBytes(const uint8_t *bytes)
 {
     return bytes[0];
+}
+
+template <typename T>
+constexpr ERROR VP9Parser::truncateVector(std::vector<T> &vector, size_t newSize)
+{
+    if (newSize > vector.size())
+    {
+        return ERROR_FAIL;
+    }
+
+    vector.resize(newSize);
+    return OK;
 }

@@ -425,13 +425,21 @@ namespace VP9FrameHeaderParser
         /// Indicates if sub sampling is used along the y axis.
         bool subsamplingY;
         /// The width of the frame.
-        uint16_t width;
+        ///
+        /// The maximum value is 65,536 (`UINT16_MAX` plus one).
+        uint32_t width;
         /// The height of the frame.
-        uint16_t height;
+        ///
+        /// The maximum value is 65,536 (`UINT16_MAX` plus one).
+        uint32_t height;
         /// A hint for the application for the desired width to render.
-        uint16_t renderWidth;
+        ///
+        /// The maximum value is 65,536 (`UINT16_MAX` plus one).
+        uint32_t renderWidth;
         /// A hint for the application for the desired height to render.
-        uint16_t renderHeight;
+        ///
+        /// The maximum value is 65,536 (`UINT16_MAX` plus one).
+        uint32_t renderHeight;
         /// A variable holding the vertical location of the block in units of 8x8 pixels.
         uint16_t miCols;
         /// A variable holding the horizontal location of the block in units of 8x8 pixels.
@@ -451,12 +459,12 @@ namespace VP9FrameHeaderParser
         /// Indicates that the filter level depends on the mode and reference frame
         /// used to predict a block.
         bool loopFilterDeltaEnabled;
-        /// Indicates that the the bitstream contains the syntax element loopFilterRefDelta.
-        bool updateRefDelta;
+        /// Indicates that the the bitstream contains the syntax element `loopFilterRefDeltas`.
+        bool loopFilterUpdateRefDelta;
         /// Contains the adjustment needed for the filter level based on the chosen reference frame.
         int8_t loopFilterRefDeltas[4];
-        /// Indicates that the the bitstream contains the syntax element loopFilterModeDeltas.
-        bool updateModeDelta;
+        /// Indicates that the the bitstream contains the syntax element `loopFilterModeDeltas`.
+        bool loopFilterUpdateModeDelta;
         /// Contains the adjustment needed for the filter level based on the chosen mode.
         int8_t loopFilterModeDeltas[2];
         /// The base frame qindex. This is used for Y AC coefficients and as the base value
@@ -513,7 +521,7 @@ namespace VP9FrameHeaderParser
     /// Parses VP9 bitstreams.
     struct VP9Parser
     {
-        std::pair<uint16_t, uint16_t> refFrameSizes[8] = {};
+        std::pair<uint32_t, uint32_t> refFrameSizes[8] = {};
         PROFILE profile = PROFILE_0;
         bool showExistingFrame = false;
         Option<uint8_t> frameToShowMapIdx = { false };
@@ -535,10 +543,10 @@ namespace VP9FrameHeaderParser
         COLOR_RANGE colorRange = COLOR_RANGE_STUDIO_SWING;
         bool subsamplingX = true;
         bool subsamplingY = true;
-        uint16_t width = 0;
-        uint16_t height = 0;
-        uint16_t renderWidth = 0;
-        uint16_t renderHeight = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t renderWidth = 0;
+        uint32_t renderHeight = 0;
         uint16_t miCols = 0;
         uint16_t miRows = 0;
         uint8_t tileRowsLog2 = 0;
@@ -547,9 +555,9 @@ namespace VP9FrameHeaderParser
         uint8_t loopFilterLevel = 0;
         uint8_t loopFilterSharpness = 0;
         bool loopFilterDeltaEnabled = false;
-        bool updateRefDelta = false;
-        int8_t loopFilterRefDeltas[4] = {1, 0, -1, -1};
-        bool updateModeDelta = false;
+        bool loopFilterUpdateRefDelta = false;
+        int8_t loopFilterRefDeltas[4] = { 1, 0, -1, -1 };
+        bool loopFilterUpdateModeDelta = false;
         int8_t loopFilterModeDeltas[2] = {};
         int32_t baseQIdx = 0;
         int32_t deltaQYDc = 0;
@@ -574,7 +582,7 @@ namespace VP9FrameHeaderParser
         Result<std::vector<Frame>> parsePacket(std::vector<uint8_t> packet);
 
     private:
-        Result<size_t> readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index);
+        Result<uint32_t> readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index);
         Result<Frame> parseFrame(std::vector<uint8_t> data);
         /// Implements spec "8.10 Reference frame update process".
         void refreshRefFrames();
@@ -598,6 +606,8 @@ namespace VP9FrameHeaderParser
         static constexpr uint32_t u32FromLeBytes(const uint8_t *bytes);
         static constexpr uint16_t u16FromLeBytes(const uint8_t *bytes);
         static constexpr uint8_t u8FromLeBytes(const uint8_t *bytes);
+        template <typename T>
+        static constexpr ERROR truncateVector(std::vector<T> &vector, size_t newSize);
     };
 };
 
