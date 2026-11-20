@@ -2,8 +2,8 @@
  *    MIT License
  *
  *    Copyright (c) 2016 Błażej Szczygieł
- * 	  Copyright (c) 2026-present The Simplicity Group & contributors
- * 	  See AUTHORS.md for more information
+ *    Copyright (c) 2026-present The Simplicity Group & contributors
+ *    See AUTHORS.md for more information
  *
  *    Permission is hereby granted, free of charge, to any person obtaining a copy
  *    of this software and associated documentation files (the "Software"), to deal
@@ -359,8 +359,6 @@ namespace VP9FrameParser
     /// A VP9 frame.
     struct VP9Frame
     {
-        /// The raw bitstream in the frame.
-        std::vector<uint8_t> data;
         /// The profile the frame is using.
         PROFILE profile;
         /// Indicates that the frame indexed by `frameToShowMapIdx` is to be displayed.
@@ -499,13 +497,13 @@ namespace VP9FrameParser
         int16_t segmentFeatureData[8][4];
 
         /// Creates a frame from the parser state.
-        static VP9Frame create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize, std::vector<uint8_t> data);
+        static VP9Frame create(VP9Parser &parser, size_t uncompressedHeaderSize, size_t compressedHeaderSize, size_t tileSize);
         /// Returns a slice into the data of the compressed header.
-        Slice<uint8_t> compressedHeaderData();
+        Slice<uint8_t> compressedHeaderData(Slice<uint8_t> packet);
         /// Returns a slice into the data of the compressed header and tile data.
-        Slice<uint8_t> compressedHeaderAndTileData();
+        Slice<uint8_t> compressedHeaderAndTileData(Slice<uint8_t> packet);
         /// Returns a slice into the data of the tile data.
-        Slice<uint8_t> tileData();
+        Slice<uint8_t> tileData(Slice<uint8_t> packet);
         /// Last reference frame index.
         uint8_t lastRefFrameIndex();
         /// Golden reference frame index.
@@ -577,11 +575,11 @@ namespace VP9FrameParser
         /// Packets needs to be supplied in the order they are appearing in the bitstream. The caller
         /// needs to reset the parser if the bitstream is changed or a seek happened. Not resetting the
         /// parser in such cases results in garbage data or errors.
-        Result<std::vector<VP9Frame>> parsePacket(std::vector<uint8_t> packet);
+        Result<std::vector<VP9Frame>> parsePacket(Slice<uint8_t> data);
 
     private:
         Result<uint32_t> readFrameSize(MutableSlice<uint8_t> entryData, size_t bytesSize, size_t index);
-        Result<VP9Frame> parseFrame(std::vector<uint8_t> data);
+        Result<VP9Frame> parseFrame(Slice<uint8_t> data);
         /// Implements spec "8.10 Reference frame update process".
         void refreshRefFrames();
         ERROR frameSyncCode(BitReader &br);
@@ -604,7 +602,7 @@ namespace VP9FrameParser
         static constexpr uint32_t u32FromLeBytes(const uint8_t *bytes);
         static constexpr uint16_t u16FromLeBytes(const uint8_t *bytes);
         static constexpr uint8_t u8FromLeBytes(const uint8_t *bytes);
-        static ERROR truncateVectorU8(std::vector<uint8_t> &vector, size_t newSize);
+        static ERROR truncateSliceU8(Slice<uint8_t> &slice, size_t newSize);
     };
 };
 
