@@ -68,16 +68,6 @@ BitReader::BitReader(Slice<uint8_t> slice)
     this->sizeInBits = slice.len * 8;
 }
 
-Result<uint64_t> BitReader::readU64(uint8_t count)
-{
-    return readUnsigned<uint64_t>(count);
-}
-
-Result<uint32_t> BitReader::readU32(uint8_t count)
-{
-    return readUnsigned<uint32_t>(count);
-}
-
 Result<uint16_t> BitReader::readU16(uint8_t count)
 {
     return readUnsigned<uint16_t>(count);
@@ -552,7 +542,7 @@ Result<std::vector<VP9Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet
                         return { ERROR_FAIL };
                     }
 
-                    ERROR packetTruncateError = truncateVector(packet, frameSizeResult.value);
+                    ERROR packetTruncateError = truncateVectorU8(packet, frameSizeResult.value);
                     if (packetTruncateError)
                     {
                         return { packetTruncateError };
@@ -590,7 +580,7 @@ Result<std::vector<VP9Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet
 
                     std::vector<uint8_t> leftOver = std::vector<uint8_t>(packet.begin() + firstFrameSizeResult.value, packet.end());
 
-                    ERROR packetTruncateError = truncateVector(packet, firstFrameSizeResult.value);
+                    ERROR packetTruncateError = truncateVectorU8(packet, firstFrameSizeResult.value);
                     if (packetTruncateError)
                     {
                         return { packetTruncateError };
@@ -601,9 +591,8 @@ Result<std::vector<VP9Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet
                     {
                         return { firstFrameResult.error };
                     }
-                    
 
-                    ERROR leftOverTruncateError = truncateVector(leftOver, secondFrameSizeResult.value);
+                    ERROR leftOverTruncateError = truncateVectorU8(leftOver, secondFrameSizeResult.value);
                     if (leftOverTruncateError)
                     {
                         return { leftOverTruncateError };
@@ -638,7 +627,7 @@ Result<std::vector<VP9Frame>> VP9Parser::parsePacket(std::vector<uint8_t> packet
 
                         std::vector<uint8_t> leftOver = std::vector<uint8_t>(packet.begin() + frameSizeResult.value, packet.end());
 
-                        ERROR packetTruncateError = truncateVector(packet, frameSizeResult.value);
+                        ERROR packetTruncateError = truncateVectorU8(packet, frameSizeResult.value);
                         if (packetTruncateError)
                         {
                             return { packetTruncateError };
@@ -1749,8 +1738,7 @@ constexpr uint8_t VP9Parser::u8FromLeBytes(const uint8_t *bytes)
     return bytes[0];
 }
 
-template <typename T>
-constexpr ERROR VP9Parser::truncateVector(std::vector<T> &vector, size_t newSize)
+ERROR VP9Parser::truncateVectorU8(std::vector<uint8_t> &vector, size_t newSize)
 {
     if (newSize > vector.size())
     {

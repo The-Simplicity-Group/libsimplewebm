@@ -606,8 +606,7 @@ namespace VP9FrameHeaderParser
         static constexpr uint32_t u32FromLeBytes(const uint8_t *bytes);
         static constexpr uint16_t u16FromLeBytes(const uint8_t *bytes);
         static constexpr uint8_t u8FromLeBytes(const uint8_t *bytes);
-        template <typename T>
-        static constexpr ERROR truncateVector(std::vector<T> &vector, size_t newSize);
+        static ERROR truncateVectorU8(std::vector<uint8_t> &vector, size_t newSize);
     };
 };
 
