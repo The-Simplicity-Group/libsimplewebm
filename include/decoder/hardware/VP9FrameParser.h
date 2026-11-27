@@ -83,14 +83,6 @@ namespace VP9FrameParser
         ERROR_INVALID_FRAME_SIZE_BYTE_SIZE,
     };
 
-    /// Equivalent for Rust's Option type.
-    template <typename T>
-    struct Option
-    {
-        bool hasValue = false;
-        T value = {};
-    };
-
     /// Equivalent for Rust's slice type.
     template <typename T>
     struct Slice
@@ -364,8 +356,8 @@ namespace VP9FrameParser
         /// Indicates that the frame indexed by `frameToShowMapIdx` is to be displayed.
         /// The frame contains no actual frame data.
         bool showExistingFrame;
-        /// Specifies the frame to be displayed. It is only available if `showExistingFrame` is true.
-        Option<uint8_t> frameToShowMapIdx;
+        /// Specifies the frame to be displayed. It is only relevant if `showExistingFrame` is true.
+        uint8_t frameToShowMapIdx;
         /// The frame type of the previous frame.
         FRAME_TYPE lastFrameType;
         /// The frame type of this frame.
@@ -520,7 +512,7 @@ namespace VP9FrameParser
         std::pair<uint32_t, uint32_t> refFrameSizes[8] = {};
         PROFILE profile = PROFILE_0;
         bool showExistingFrame = false;
-        Option<uint8_t> frameToShowMapIdx = { false };
+        uint8_t frameToShowMapIdx = 0;
         FRAME_TYPE lastFrameType = FRAME_TYPE_NON_KEY_FRAME;
         FRAME_TYPE frameType = FRAME_TYPE_NON_KEY_FRAME;
         bool showFrame = false;

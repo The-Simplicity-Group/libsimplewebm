@@ -745,7 +745,7 @@ Result<VP9Frame> VP9Parser::parseFrame(Slice<uint8_t> data)
         {
             return { frameToShowMapIdxResult.error };
         }
-        this->frameToShowMapIdx = { true, frameToShowMapIdxResult.value };
+        this->frameToShowMapIdx = frameToShowMapIdxResult.value;
         this->refreshFrameFlags = 0;
         this->loopFilterLevel = 0;
 
@@ -754,7 +754,7 @@ Result<VP9Frame> VP9Parser::parseFrame(Slice<uint8_t> data)
     }
     else
     {
-        this->frameToShowMapIdx = { false };
+        this->frameToShowMapIdx = 0;
     }
 
     this->lastFrameType = this->frameType;
