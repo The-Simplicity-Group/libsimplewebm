@@ -64,7 +64,7 @@ public:
 		NO_FRAME
 	};
 
-	VPXDecoder(const WebMDemuxer &demuxer, unsigned threads = 1);
+	VPXDecoder(const WebMDemuxer &demuxer, unsigned int threads = 1);
 	~VPXDecoder();
 
 	inline bool isOpen() const
